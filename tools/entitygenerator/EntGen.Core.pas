@@ -927,6 +927,7 @@ var
   lClassName: string;
   lKeyFields: TStringList;
   lQryMeta: TFDMetaInfoQuery;
+  lPKQuery: TFDMetaInfoQuery;
   lUniqueFieldNames: TArray<string>;
   lFieldNamesToInit: TArray<string>;
   lTypesName: TArray<string>;
@@ -954,23 +955,29 @@ begin
       GetMetaCatalogName,
       fConfig.Schema,
       ATableName, '', lKeyFields);
-    { Fallback: if GetKeyFieldNames returns nothing, query PK metadata directly }
+    { Fallback: if GetKeyFieldNames returns nothing, query PK metadata directly.
+      Must include SchemaName + CatalogName — the PG driver raises -339
+      ("table name must be specified") when either is absent and the table
+      truly has no PK constraint (empty result from GetKeyFieldNames above). }
     if lKeyFields.Count = 0 then
     begin
-      fConnection.GetKeyFieldNames('', fConfig.Schema, ATableName, '', lKeyFields);
-    end;
-    if lKeyFields.Count = 0 then
-    begin
-      var lPKQuery := TFDMetaInfoQuery.Create(nil);
+      lPKQuery := TFDMetaInfoQuery.Create(nil);
       try
         lPKQuery.Connection := fConnection;
         lPKQuery.MetaInfoKind := mkPrimaryKeyFields;
         lPKQuery.ObjectName := ATableName;
-        lPKQuery.Open;
-        while not lPKQuery.Eof do
-        begin
-          lKeyFields.Add(lPKQuery.FieldByName('COLUMN_NAME').AsString);
-          lPKQuery.Next;
+        lPKQuery.SchemaName := fConfig.Schema;
+        lPKQuery.CatalogName := GetMetaCatalogName;
+        try
+          lPKQuery.Open;
+          while not lPKQuery.Eof do
+          begin
+            lKeyFields.Add(lPKQuery.FieldByName('COLUMN_NAME').AsString);
+            lPKQuery.Next;
+          end;
+        except
+          on E: Exception do
+            LogDebug('PK fallback query failed for [%s]: %s - table likely has no PK', [ATableName, E.Message]);
         end;
       finally
         lPKQuery.Free;

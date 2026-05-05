@@ -1192,7 +1192,7 @@ begin
   mmConnectionParams.Clear;
   lstSchema.Clear;
   rgNameCase.ItemIndex := 0;
-  rgFieldNameFormatting.ItemIndex := 0;
+  rgFieldNameFormatting.ItemIndex := 1;
   chkGenerateMapping.Checked := False;
   dsTablesMapping.EmptyDataSet;
 end;

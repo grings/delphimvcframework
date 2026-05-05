@@ -1,4 +1,4 @@
-// ***************************************************************************
+﻿// ***************************************************************************
 //
 // Delphi MVC Framework
 //
@@ -32,7 +32,7 @@ implementation
 
 uses
   System.SysUtils, System.Classes, System.IOUtils,
-  System.Generics.Collections, System.Generics.Defaults,
+  System.Generics.Collections, System.Generics.Defaults, System.DateUtils,
   {$IFDEF MSWINDOWS}Winapi.Windows,{$ENDIF}
   FireDAC.Stan.Intf, FireDAC.Stan.Option, FireDAC.Stan.Error,
   FireDAC.Stan.Def, FireDAC.Stan.Pool, FireDAC.Stan.Async,
@@ -66,7 +66,7 @@ begin
 end;
 
 const
-  APP_VERSION = '1.2.0';
+  APP_VERSION = '1.3.0';
 
   { Maps env-file keys (UPPER_SNAKE_CASE) to FireDAC canonical parameter names. }
   CONNECTION_PARAM_MAP: array[0..7, 0..1] of string = (
@@ -90,7 +90,7 @@ begin
     Format(' DMVCFramework Entity Generator CLI  v%s ', [APP_VERSION]),
     80, TConsoleColor.Cyan);
   MVCFramework.Console.WriteLine(
-    'Copyright (c) 2010-2026 Daniele Teti and the DMVCFramework Team',
+    'Copyright (c) 2010-' + YearOf(Date).ToString + ' Daniele Teti',
     TConsoleColor.DarkGray);
   MVCFramework.Console.WriteLine('');
 end;
@@ -136,7 +136,7 @@ begin
     '  NAME_CASE=LowerCase             # LowerCase|UpperCase|CamelCase|PascalCase|SnakeCase|AsIs',
     TConsoleColor.DarkGray);
   MVCFramework.Console.WriteLine(
-    '  FIELD_NAME_FORMAT=AsIs          # AsIs|PascalCase',
+    '  FIELD_NAME_FORMAT=PascalCase    # PascalCase|AsIs (default: PascalCase)',
     TConsoleColor.DarkGray);
   MVCFramework.Console.WriteLine(
     '  GENERATE_MAPPING=true',
@@ -252,10 +252,10 @@ end;
 
 function ParseFieldNameFormat(const AValue: string): TEntGenFieldNameFormat;
 begin
-  if AValue.ToLower = 'pascalcase' then
-    Result := fnPascalCase
+  if AValue.ToLower = 'asis' then
+    Result := fnAsIs
   else
-    Result := fnAsIs;
+    Result := fnPascalCase;
 end;
 
 function SplitCSV(const AValue: string): TArray<string>;
@@ -474,7 +474,7 @@ begin
     { Build config }
     lConfig.Schema := GetEnvValue(lEnv, 'SCHEMA');
     lConfig.NameCase := ParseNameCase(GetEnvValue(lEnv, 'NAME_CASE', 'LowerCase'));
-    lConfig.FieldNameFormat := ParseFieldNameFormat(GetEnvValue(lEnv, 'FIELD_NAME_FORMAT', 'AsIs'));
+    lConfig.FieldNameFormat := ParseFieldNameFormat(GetEnvValue(lEnv, 'FIELD_NAME_FORMAT', 'PascalCase'));
     lConfig.GenerateMapping := GetEnvBool(lEnv, 'GENERATE_MAPPING', False);
     lConfig.ClassAsAbstract := GetEnvBool(lEnv, 'CLASS_AS_ABSTRACT', False);
     lConfig.Tables := SplitCSV(GetEnvValue(lEnv, 'TABLES'));

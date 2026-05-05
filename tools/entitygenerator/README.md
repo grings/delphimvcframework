@@ -83,7 +83,7 @@ Can be overridden with `--output`.
 # MVCNameCase attribute: LowerCase, UpperCase, CamelCase, PascalCase, SnakeCase, AsIs
 NAME_CASE=LowerCase
 
-# Property names: AsIs (keep database names) or PascalCase
+# Property names: PascalCase (default) or AsIs (keep database names)
 FIELD_NAME_FORMAT=PascalCase
 
 # Generate ActiveRecordMappingRegistry.AddEntity() calls in initialization section
