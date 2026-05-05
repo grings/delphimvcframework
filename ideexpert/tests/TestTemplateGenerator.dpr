@@ -92,6 +92,8 @@ type
     webmodule_middleware_session_timeout = 'webmodule.middleware.session.timeout';
     // Server engine type
     program_server_engine = 'program.server_engine';
+    // Computed: True for ISAPI/Apache/WinService/FastCGI WebBroker; False for console WebBroker / IndyDirect / HTTP.sys
+    program_uses_webmodule = 'program.uses_webmodule';
   end;
 
   TProgramTypes = record
@@ -368,6 +370,7 @@ begin
   Result.B['program.ssv.any'] := False;  // Will be set to True in specific test cases
   Result.S[TConfigKey.program_type] := TProgramTypes.HTTP_CONSOLE;
   Result.S[TConfigKey.program_server_engine] := 'webbroker';
+  Result.B[TConfigKey.program_uses_webmodule] := False;
   Result.S[TConfigKey.program_server_protocol] := 'http';  // http or https
   Result.B[TConfigKey.program_service_container_generate] := False;
   Result.S[TConfigKey.program_service_container_unit_name] := 'ServicesU';
@@ -504,6 +507,10 @@ begin
     // Determine server engine (default to 'webbroker' if not specified)
     if AConfig.S[TConfigKey.program_server_engine] = '' then
       AConfig.S[TConfigKey.program_server_engine] := 'webbroker';
+
+    // Default: no webmodule (console WebBroker uses EngineConfigU + TMVCServerFactory)
+    if not AConfig.Contains(TConfigKey.program_uses_webmodule) then
+      AConfig.B[TConfigKey.program_uses_webmodule] := False;
 
     // Generate program file based on server engine + program type combinations
     if AConfig.S[TConfigKey.program_server_engine] = 'indydirect' then
