@@ -120,9 +120,13 @@ type
   end;
 
   TConsoleColorStyle = record
-    TextColor, BackgroundColor, DrawColor, SymbolsColor,
-    BackgroundHighlightColor, TextHighlightColor: TConsoleColor;
-    BoxStyle: TBoxStyle;
+    Text:          string;         // default text style, e.g. Fore.Cyan
+    Draw:          string;         // borders/lines,       e.g. Fore.White
+    Symbols:       string;         // list prefixes,       e.g. Fore.Gray + Style.Dim
+    Highlight:     string;         // selected items,      e.g. Back.Blue + Fore.White + Style.Bright
+    HighlightText: string;         // headers/titles,      e.g. Fore.White + Style.Bright
+    Background:    TConsoleColor;  // whole-screen background fill (used by ClrScr + SetConsoleTheme)
+    BoxStyle:      TBoxStyle;
   end;
 
   TStringArray = array of string;
@@ -140,14 +144,170 @@ type
 
 var
   ConsoleTheme: TConsoleColorStyle = (
-    TextColor : TConsoleColor.Cyan;
-    BackgroundColor : TConsoleColor.Black;
-    DrawColor : TConsoleColor.White;
-    SymbolsColor : TConsoleColor.Gray;
-    BackgroundHighlightColor: TConsoleColor.Cyan;
-    TextHighlightColor: TConsoleColor.Blue;
-    BoxStyle: TBoxStyle.bsRounded;
+    Text:          FORE_CYAN;
+    Draw:          FORE_WHITE;
+    Symbols:       FORE_GRAY;
+    Highlight:     BACK_CYAN + FORE_DARKBLUE + STYLE_BRIGHT;
+    HighlightText: FORE_BLUE + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsRounded;
   );
+
+const
+  ConsoleThemeDefault: TConsoleColorStyle = (
+    Text:          FORE_CYAN;
+    Draw:          FORE_WHITE;
+    Symbols:       FORE_GRAY;
+    Highlight:     BACK_CYAN + FORE_DARKBLUE + STYLE_BRIGHT;
+    HighlightText: FORE_BLUE + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsRounded;
+  );
+
+  ConsoleThemeClassic: TConsoleColorStyle = (
+    Text:          FORE_WHITE;
+    Draw:          FORE_GRAY;
+    Symbols:       FORE_GRAY + STYLE_DIM;
+    Highlight:     BACK_BLUE + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_WHITE + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsSingle;
+  );
+
+  ConsoleThemeMatrix: TConsoleColorStyle = (
+    Text:          FORE_GREEN;
+    Draw:          FORE_DARKGREEN;
+    Symbols:       FORE_DARKGREEN + STYLE_DIM;
+    Highlight:     BACK_DARKGREEN + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_GREEN + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsSingle;
+  );
+
+  ConsoleThemeSunset: TConsoleColorStyle = (
+    Text:          FORE_YELLOW;
+    Draw:          FORE_RED;
+    Symbols:       FORE_DARKYELLOW + STYLE_DIM;
+    Highlight:     BACK_DARKRED + FORE_YELLOW + STYLE_BRIGHT;
+    HighlightText: FORE_YELLOW + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsRounded;
+  );
+
+  ConsoleThemeOcean: TConsoleColorStyle = (
+    Text:          FORE_CYAN;
+    Draw:          FORE_BLUE;
+    Symbols:       FORE_DARKCYAN + STYLE_DIM;
+    Highlight:     BACK_DARKBLUE + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_CYAN + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsThick;
+  );
+
+  ConsoleThemeMonochrome: TConsoleColorStyle = (
+    Text:          FORE_GRAY;
+    Draw:          FORE_DARKGRAY;
+    Symbols:       FORE_DARKGRAY + STYLE_DIM;
+    Highlight:     BACK_DARKGRAY + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_WHITE + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsThick;
+  );
+
+  ConsoleThemeMagenta: TConsoleColorStyle = (
+    Text:          FORE_MAGENTA;
+    Draw:          FORE_DARKMAGENTA;
+    Symbols:       FORE_DARKMAGENTA + STYLE_DIM;
+    Highlight:     BACK_DARKMAGENTA + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_MAGENTA + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsRounded;
+  );
+
+  ConsoleThemeAlert: TConsoleColorStyle = (
+    Text:          FORE_WHITE;
+    Draw:          FORE_GRAY;
+    Symbols:       FORE_DARKGRAY + STYLE_DIM;
+    Highlight:     BACK_RED + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_RED + STYLE_BRIGHT;
+    Background:    TConsoleColor.Black;
+    BoxStyle:      TBoxStyle.bsSingle;
+  );
+
+  // --- Themes with non-black backgrounds ---
+
+  // Navy: DarkBlue background — Turbo Pascal / classic IDE aesthetic
+  ConsoleThemeNavy: TConsoleColorStyle = (
+    Text:          FORE_WHITE;
+    Draw:          FORE_CYAN;
+    Symbols:       FORE_GRAY + STYLE_DIM;
+    Highlight:     BACK_CYAN + FORE_DARKBLUE + STYLE_BRIGHT;
+    HighlightText: FORE_YELLOW + STYLE_BRIGHT;
+    Background:    TConsoleColor.DarkBlue;
+    BoxStyle:      TBoxStyle.bsDouble;
+  );
+
+  // Forest: DarkGreen background — vintage terminal look
+  ConsoleThemeForest: TConsoleColorStyle = (
+    Text:          FORE_YELLOW;
+    Draw:          FORE_WHITE;
+    Symbols:       FORE_GRAY + STYLE_DIM;
+    Highlight:     BACK_DARKYELLOW + FORE_BLACK + STYLE_BRIGHT;
+    HighlightText: FORE_WHITE + STYLE_BRIGHT;
+    Background:    TConsoleColor.DarkGreen;
+    BoxStyle:      TBoxStyle.bsSingle;
+  );
+
+  // Slate: DarkGray background — softer dark mode
+  ConsoleThemeSlate: TConsoleColorStyle = (
+    Text:          FORE_WHITE;
+    Draw:          FORE_CYAN;
+    Symbols:       FORE_GRAY + STYLE_DIM;
+    Highlight:     BACK_BLUE + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_CYAN + STYLE_BRIGHT;
+    Background:    TConsoleColor.DarkGray;
+    BoxStyle:      TBoxStyle.bsRounded;
+  );
+
+  // Paper: Gray background — retro light terminal
+  ConsoleThemePaper: TConsoleColorStyle = (
+    Text:          FORE_DARKBLUE;
+    Draw:          FORE_DARKGREEN;
+    Symbols:       FORE_DARKGRAY;
+    Highlight:     BACK_DARKBLUE + FORE_WHITE + STYLE_BRIGHT;
+    HighlightText: FORE_DARKBLUE + STYLE_BRIGHT;
+    Background:    TConsoleColor.Gray;
+    BoxStyle:      TBoxStyle.bsSingle;
+  );
+
+  // Burgundy: DarkRed background — dramatic, high-contrast
+  ConsoleThemeBurgundy: TConsoleColorStyle = (
+    Text:          FORE_YELLOW;
+    Draw:          FORE_WHITE;
+    Symbols:       FORE_GRAY + STYLE_DIM;
+    Highlight:     BACK_DARKYELLOW + FORE_BLACK + STYLE_BRIGHT;
+    HighlightText: FORE_WHITE + STYLE_BRIGHT;
+    Background:    TConsoleColor.DarkRed;
+    BoxStyle:      TBoxStyle.bsThick;
+  );
+
+  // Midnight: DarkCyan background — teal terminal
+  ConsoleThemeMidnight: TConsoleColorStyle = (
+    Text:          FORE_WHITE;
+    Draw:          FORE_YELLOW;
+    Symbols:       FORE_GRAY + STYLE_DIM;
+    Highlight:     BACK_DARKCYAN + FORE_BLACK + STYLE_BRIGHT;
+    HighlightText: FORE_YELLOW + STYLE_BRIGHT;
+    Background:    TConsoleColor.DarkCyan;
+    BoxStyle:      TBoxStyle.bsRounded;
+  );
+
+
+// ============================================================================
+// CONSOLE THEME FUNCTIONS
+// ============================================================================
+
+procedure SetConsoleTheme(const Theme: TConsoleColorStyle);
 
 
 // ============================================================================
@@ -194,6 +354,13 @@ procedure EnableANSIColorConsole;
 /// Always True on Linux. On Windows, True only after a successful EnableANSIColorConsole call.
 /// </summary>
 function IsANSIColorConsoleEnabled: Boolean;
+
+// ============================================================================
+// ANSI PRIMITIVES (low-level, theme-aware)
+// ============================================================================
+
+procedure WriteAnsiText(const AStyle, AText: string);
+procedure WriteAnsiLine(const AStyle, AText: string);
 
 // ============================================================================
 // TEXT OUTPUT
@@ -338,7 +505,6 @@ uses
   System.Math;
 
 type
-  TStyleColorComponent = (sccText, sccBackground, sccHighLightBackground, sccHighLightText, sccDraw, sccSymbol);
   TBoxChars = record
     TopLeft, TopRight, BottomLeft, BottomRight: Char;
     Vertical, Horizontal: Char;
@@ -348,17 +514,59 @@ type
 var
   GForeGround, GSavedForeGround: Int16;
   GBackGround, GSavedBackGround: Int16;
+  GThemeReset: string;
   GOutHandle: THandle = INVALID_HANDLE_VALUE;
   GInputHandle: THandle = INVALID_HANDLE_VALUE;
   GIsConsoleAllocated: Boolean = False;
   GLock: TObject = nil;
   GSavedCursorX, GSavedCursorY: Word;
-  // ANSI VT-processing state moved to LoggerPro.AnsiColors (single source
-  // of truth). EnableANSIColorConsole / IsANSIColorConsoleEnabled below
-  // delegate to that unit to avoid duplicated logic and divergent state.
 {$IFDEF MSWINDOWS}
   hConsoleInput: THandle;
 {$ENDIF}
+
+const
+  // Cross-platform ANSI escape sequences indexed by TConsoleColor.
+  // GBackGround is stored bit-shifted (Ord shl 4) for historical reasons;
+  // look up with ANSI_BG[TConsoleColor(GBackGround shr 4)].
+  ANSI_FG: array[TConsoleColor] of string = (
+    FORE_BLACK,       // Black
+    FORE_DARKBLUE,    // DarkBlue
+    FORE_DARKGREEN,   // DarkGreen
+    FORE_DARKCYAN,    // DarkCyan
+    FORE_DARKRED,     // DarkRed
+    FORE_DARKMAGENTA, // DarkMagenta
+    FORE_DARKYELLOW,  // DarkYellow
+    FORE_GRAY,        // Gray
+    FORE_DARKGRAY,    // DarkGray
+    FORE_BLUE,        // Blue
+    FORE_GREEN,       // Green
+    FORE_CYAN,        // Cyan
+    FORE_RED,         // Red
+    FORE_MAGENTA,     // Magenta
+    FORE_YELLOW,      // Yellow
+    FORE_WHITE,       // White
+    ''                // UseDefault — callers substitute ConsoleTheme.Text
+  );
+
+  ANSI_BG: array[TConsoleColor] of string = (
+    BACK_BLACK,       // Black
+    BACK_DARKBLUE,    // DarkBlue
+    BACK_DARKGREEN,   // DarkGreen
+    BACK_DARKCYAN,    // DarkCyan
+    BACK_DARKRED,     // DarkRed
+    BACK_DARKMAGENTA, // DarkMagenta
+    BACK_DARKYELLOW,  // DarkYellow
+    BACK_GRAY,        // Gray
+    BACK_DARKGRAY,    // DarkGray
+    BACK_BLUE,        // Blue
+    BACK_GREEN,       // Green
+    BACK_CYAN,        // Cyan
+    BACK_RED,         // Red
+    BACK_MAGENTA,     // Magenta
+    BACK_YELLOW,      // Yellow
+    BACK_WHITE,       // White
+    ''                // UseDefault — no background override
+  );
 
 {$IFDEF LINUX}
 type
@@ -383,47 +591,6 @@ function __select(nfds: Integer; readfds, writefds, exceptfds: Pointer;
 var
   GOriginalTermios: termios;
   GTerminalSetup: Boolean = False;
-
-const
-  ANSI_COLORS: array[TConsoleColor] of string = (
-    '30',     // Black
-    '34',     // DarkBlue
-    '32',     // DarkGreen
-    '36',     // DarkCyan
-    '31',     // DarkRed
-    '35',     // DarkMagenta
-    '33',     // DarkYellow
-    '37',     // Gray
-    '90',     // DarkGray
-    '94',     // Blue
-    '92',     // Green
-    '96',     // Cyan
-    '91',     // Red
-    '95',     // Magenta
-    '93',     // Yellow
-    '97',     // White
-    '0'       // UseDefault (reset)
-  );
-
-  ANSI_BG_COLORS: array[TConsoleColor] of string = (
-    '40',     // Black
-    '44',     // DarkBlue
-    '42',     // DarkGreen
-    '46',     // DarkCyan
-    '41',     // DarkRed
-    '45',     // DarkMagenta
-    '43',     // DarkYellow
-    '47',     // Gray
-    '100',    // DarkGray
-    '104',    // Blue
-    '102',    // Green
-    '106',    // Cyan
-    '101',    // Red
-    '105',    // Magenta
-    '103',    // Yellow
-    '107',    // White
-    '0'       // UseDefault (reset)
-  );
 
 {$ENDIF}
 
@@ -477,25 +644,6 @@ begin
   end;
 end;
 
-function GetColorOrDefault(Color: TConsoleColor; StyleColorComponent: TStyleColorComponent): TConsoleColor;
-begin
-  if Color = TConsoleColor.UseDefault then
-  begin
-    case StyleColorComponent of
-      sccText: Result := ConsoleTheme.TextColor;
-      sccBackground: Result := ConsoleTheme.BackgroundColor;
-      sccDraw: Result := ConsoleTheme.DrawColor;
-      sccSymbol: Result := ConsoleTheme.SymbolsColor;
-      sccHighLightBackground: Result := ConsoleTheme.BackgroundHighlightColor;
-      sccHighLightText: Result := ConsoleTheme.TextHighlightColor;
-      else
-        raise EMVCConsole.Create('Unknown StyleColorComponent');
-    end;
-  end
-  else
-    Result := Color;
-end;
-
 procedure FlushOutput; inline;
 begin
   Flush(Output);
@@ -514,6 +662,16 @@ begin
         Result[I] := Length(Data[J][I]);
     Inc(Result[I], 2); // padding
   end;
+end;
+
+procedure WriteAnsiText(const AStyle, AText: string);
+begin
+  Write(AStyle + AText + GThemeReset);
+end;
+
+procedure WriteAnsiLine(const AStyle, AText: string);
+begin
+  WriteLn(AStyle + AText + GThemeReset);
 end;
 
 // ============================================================================
@@ -647,8 +805,7 @@ end;
 
 procedure UpdateMode;
 begin
-  Write(ESC + '[' + ANSI_COLORS[TConsoleColor(GForeGround)] + ';' +
-        ANSI_BG_COLORS[TConsoleColor(GBackGround shr 4)] + 'm');
+  Write(ANSI_FG[TConsoleColor(GForeGround)] + ANSI_BG[TConsoleColor(GBackGround shr 4)]);
 end;
 
 function GetCh: Char;
@@ -868,7 +1025,6 @@ var
   dwConSize: UInt32;
   lStartCoord: _COORD;
   lCharsWritten: UInt32;
-  lConsoleScreenBufferInfo: _CONSOLE_SCREEN_BUFFER_INFO;
 begin
   Init;
   lSize := GetConsoleBufferSize;
@@ -877,12 +1033,14 @@ begin
   lStartCoord.Y := 0;
   if not FillConsoleOutputCharacter(GOutHandle, ' ', dwConSize, lStartCoord, lCharsWritten) then
     raise EMVCConsole.CreateFmt('Cannot fill console - GetLastError() = %d', [GetLastError]);
-  if not GetConsoleScreenBufferInfo(GOutHandle, lConsoleScreenBufferInfo) then
-    raise EMVCConsole.CreateFmt('Cannot GetConsoleScreenBufferInfo - GetLastError() = %d', [GetLastError]);
-  if not FillConsoleOutputAttribute(GOutHandle, lConsoleScreenBufferInfo.wAttributes, dwConSize, lStartCoord,
+  if not FillConsoleOutputAttribute(GOutHandle, GForeGround or GBackGround, dwConSize, lStartCoord,
     lCharsWritten) then
     raise EMVCConsole.CreateFmt('Cannot FillConsoleOutputAttribute - GetLastError() = %d', [GetLastError]);
   GotoXY(0, 0);
+  // Sync the ANSI current attribute with the background we just painted.
+  // FillConsoleOutputAttribute sets stored cell attrs but does not update the
+  // terminal's "current" text attribute used by subsequent Write() calls.
+  Write(ANSI_BG[TConsoleColor(GBackGround shr 4)]);
 end;
 
 function GetConsoleSize: TMVCConsoleSize;
@@ -961,7 +1119,7 @@ end;
 procedure UpdateMode;
 begin
   Init;
-  SetConsoleTextAttribute(GOutHandle, Ord(GForeGround) or Ord(GBackGround));
+  Write(ANSI_FG[TConsoleColor(GForeGround)] + ANSI_BG[TConsoleColor(GBackGround shr 4)]);
 end;
 
 procedure GotoXY(const X, Y: Word);
@@ -1003,10 +1161,8 @@ end;
 
 procedure ResetConsole;
 begin
+  Write(STYLE_RESETALL);
   SetDefaultColors;
-{$IFDEF LINUX}
-  Write(ESC + '[0m');
-{$ENDIF}
 end;
 
 procedure TextColor(const Color: TConsoleColor);
@@ -1091,16 +1247,16 @@ end;
 
 procedure WriteColoredText(const Text: string; ForeColor: TConsoleColor;
                           BackColor: TConsoleColor);
+var
+  LStyle: string;
 begin
-  Init;
-  SaveColors;
-  try
-    TextColor(GetColorOrDefault(ForeColor, sccText));
-    TextBackground(GetColorOrDefault(BackColor, sccBackground));
-    Write(Text);
-  finally
-    RestoreSavedColors;
-  end;
+  if ForeColor = UseDefault then
+    LStyle := ConsoleTheme.Text
+  else
+    LStyle := ANSI_FG[ForeColor];
+  if BackColor <> UseDefault then
+    LStyle := LStyle + ANSI_BG[BackColor];
+  Write(LStyle + Text + GThemeReset);
 end;
 
 procedure WriteLine(const Text: string);
@@ -1125,7 +1281,6 @@ var
   PaddingLeft, PaddingRight: Integer;
   AlignedText: string;
 begin
-  TextColor := GetColorOrDefault(TextColor, sccText);
   if Length(Text) >= Width then
   begin
     WriteLine(Text, TextColor);
@@ -1155,50 +1310,54 @@ var
   Line: string;
   PaddingSize: Integer;
   CharSymbol: Char;
+  LHeaderStyle: string;
 begin
-  HeaderColor := GetColorOrDefault(HeaderColor, sccHighLightText);
+  if HeaderColor = UseDefault then
+    LHeaderStyle := ConsoleTheme.HighlightText
+  else
+    LHeaderStyle := ANSI_FG[HeaderColor];
   CharSymbol := GetBoxChars(ConsoleTheme.BoxStyle).Horizontal;
   Line := StringOfChar(CharSymbol, Width);
-  WriteLine(Line, ConsoleTheme.DrawColor);
+  WriteAnsiLine(ConsoleTheme.Draw, Line);
 
   if Text <> '' then
   begin
     PaddingSize := (Width - Length(Text) - 2) div 2;
     Line := StringOfChar(' ', PaddingSize) + ' ' + Text + ' ' +
             StringOfChar(' ', Width - PaddingSize - Length(Text) - 2);
-    WriteLine(Line, HeaderColor);
+    WriteAnsiLine(LHeaderStyle, Line);
     Line := StringOfChar(CharSymbol, Width);
-    WriteLine(Line, ConsoleTheme.DrawColor);
+    WriteAnsiLine(ConsoleTheme.Draw, Line);
   end;
 end;
 
 procedure WriteSeparator(Width: Integer; CharSymbol: Char);
 begin
-  WriteLine(StringOfChar(CharSymbol, Width), Gray);
+  WriteAnsiLine(ConsoleTheme.Draw, StringOfChar(CharSymbol, Width));
 end;
 
 procedure WriteSuccess(const Message: string);
 begin
-  WriteColoredText('[SUCCESS] ', Green);
-  WriteLine(Message, White);
+  WriteColoredText('[SUCCESS]', Black, Green);
+  WriteAnsiLine(ConsoleTheme.Text, ' ' + Message);
 end;
 
 procedure WriteWarning(const Message: string);
 begin
-  WriteColoredText('[WARNING] ', Yellow);
-  WriteLine(Message, White);
+  WriteColoredText('[WARNING]', Black, Yellow);
+  WriteAnsiLine(ConsoleTheme.Text, ' ' + Message);
 end;
 
 procedure WriteError(const Message: string);
 begin
-  WriteColoredText('[ERROR] ', Red);
-  WriteLine(Message, White);
+  WriteColoredText('[ERROR]', White, Red);
+  WriteAnsiLine(ConsoleTheme.Text, ' ' + Message);
 end;
 
 procedure WriteInfo(const Message: string);
 begin
-  WriteColoredText('[INFO] ', Cyan);
-  WriteLine(Message, White);
+  WriteColoredText('[INFO]', White, Blue);
+  WriteAnsiLine(ConsoleTheme.Text, ' ' + Message);
 end;
 
 procedure WriteFormattedList(const Title: string; const Items: TStringArray;
@@ -1208,7 +1367,7 @@ var
   Prefix: string;
 begin
   if Title <> '' then
-    WriteLine(Title, ConsoleTheme.TextColor);
+    WriteAnsiLine(ConsoleTheme.Text, Title);
   for I := 0 to High(Items) do
   begin
     case ListStyle of
@@ -1217,8 +1376,8 @@ begin
       lsDash: Prefix := '  - ';
       lsArrow: Prefix := '  > ';
     end;
-    WriteColoredText(Prefix, ConsoleTheme.SymbolsColor);
-    WriteLine(Items[I], ConsoleTheme.TextColor);
+    WriteAnsiText(ConsoleTheme.Symbols, Prefix);
+    WriteAnsiLine(ConsoleTheme.Text, Items[I]);
   end;
 end;
 
@@ -1389,7 +1548,7 @@ var
   Cell, Line: string;
 begin
   // Top border
-  WriteColoredText(lBoxChars.TopLeft, ConsoleTheme.DrawColor);
+  WriteAnsiText(ConsoleTheme.Draw, lBoxChars.TopLeft);
   Line := '';
   for I := 0 to High(ColWidths) do
   begin
@@ -1399,34 +1558,34 @@ begin
     else
       Line := Line + lBoxChars.TopRight;
   end;
-  WriteLine(Line, ConsoleTheme.DrawColor);
+  WriteAnsiLine(ConsoleTheme.Draw, Line);
 
   // Headers
-  WriteColoredText(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+  WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Vertical);
   for I := 0 to High(Headers) do
   begin
     Cell := ' ' + PadRight(Headers[I], ColWidths[I] - 2) + ' ';
-    WriteColoredText(Cell, ConsoleTheme.TextHighlightColor);
-    WriteColoredText(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+    WriteAnsiText(ConsoleTheme.HighlightText, Cell);
+    WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Vertical);
   end;
   WriteLn;
 
   // Header separator
-  WriteColoredText(lBoxChars.LeftJoin, ConsoleTheme.DrawColor);
+  WriteAnsiText(ConsoleTheme.Draw, lBoxChars.LeftJoin);
   for I := 0 to High(ColWidths) do
   begin
-    WriteColoredText(StringOfChar(lBoxChars.Horizontal, ColWidths[I]), ConsoleTheme.DrawColor);
+    WriteAnsiText(ConsoleTheme.Draw, StringOfChar(lBoxChars.Horizontal, ColWidths[I]));
     if I < High(ColWidths) then
-      WriteColoredText(lBoxChars.Cross, ConsoleTheme.DrawColor)
+      WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Cross)
     else
-      WriteColoredText(lBoxChars.RightJoin, ConsoleTheme.DrawColor);
+      WriteAnsiText(ConsoleTheme.Draw, lBoxChars.RightJoin);
   end;
   WriteLn;
 
   // Data rows
   for I := 0 to High(Data) do
   begin
-    WriteColoredText(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+    WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Vertical);
     for J := 0 to High(Headers) do
     begin
       if J < Length(Data[I]) then
@@ -1435,17 +1594,17 @@ begin
         Cell := StringOfChar(' ', ColWidths[J]);
 
       if I = HighlightRow then
-        WriteColoredText(Cell, ConsoleTheme.TextHighlightColor, ConsoleTheme.BackgroundHighlightColor)
+        WriteAnsiText(ConsoleTheme.Highlight, Cell)
       else
-        WriteColoredText(Cell, ConsoleTheme.TextColor);
+        WriteAnsiText(ConsoleTheme.Text, Cell);
 
-      WriteColoredText(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+      WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Vertical);
     end;
     WriteLn;
   end;
 
   // Bottom border
-  WriteColoredText(lBoxChars.BottomLeft, ConsoleTheme.DrawColor);
+  WriteAnsiText(ConsoleTheme.Draw, lBoxChars.BottomLeft);
   Line := '';
   for I := 0 to High(ColWidths) do
   begin
@@ -1455,7 +1614,7 @@ begin
     else
       Line := Line + lBoxChars.BottomRight;
   end;
-  WriteLine(Line, ConsoleTheme.DrawColor);
+  WriteAnsiLine(ConsoleTheme.Draw, Line);
 end;
 
 procedure Table(const Headers: TStringArray; const Data: TStringMatrix);
@@ -1472,7 +1631,7 @@ begin
   ColWidths := CalcColumnWidths(Headers, Data);
 
   if Title <> '' then
-    WriteLine(Title, ConsoleTheme.TextHighlightColor);
+    WriteAnsiLine(ConsoleTheme.HighlightText, Title);
 
   InternalDrawTable(Headers, Data, ColWidths, GetBoxChars(bsUseDefault));
 end;
@@ -1504,7 +1663,7 @@ var
   begin
     GotoXY(0, StartY);
     if Title <> '' then
-      WriteLine(Title, ConsoleTheme.TextHighlightColor);
+      WriteAnsiLine(ConsoleTheme.HighlightText, Title);
     InternalDrawTable(Headers, Data, ColWidths, lBoxChars, SelectedIndex);
     WriteLine('Use arrows to navigate, Enter to select, ESC to cancel', DarkGray);
   end;
@@ -1560,32 +1719,32 @@ begin
 
   // Top border
   Line := lBoxChars.TopLeft + StringOfChar(lBoxChars.Horizontal, Width - 2) + lBoxChars.TopRight;
-  WriteLine(Line, ConsoleTheme.DrawColor);
+  WriteAnsiLine(ConsoleTheme.Draw, Line);
 
   // Title
   if Title <> '' then
   begin
     ContentLine := ' ' + PadRight(Title, Width - 4) + ' ';
-    WriteColoredText(lBoxChars.Vertical, ConsoleTheme.DrawColor);
-    WriteColoredText(ContentLine, ConsoleTheme.TextHighlightColor);
-    WriteLine(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+    WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Vertical);
+    WriteAnsiText(ConsoleTheme.HighlightText, ContentLine);
+    WriteAnsiLine(ConsoleTheme.Draw, lBoxChars.Vertical);
 
     Line := lBoxChars.LeftJoin + StringOfChar(lBoxChars.Horizontal, Width - 2) + lBoxChars.RightJoin;
-    WriteLine(Line, ConsoleTheme.DrawColor);
+    WriteAnsiLine(ConsoleTheme.Draw, Line);
   end;
 
   // Content
   for I := 0 to High(Content) do
   begin
-    WriteColoredText(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+    WriteAnsiText(ConsoleTheme.Draw, lBoxChars.Vertical);
     ContentLine := ' ' + PadRight(Content[I], Width - 4) + ' ';
-    WriteColoredText(ContentLine, ConsoleTheme.TextColor);
-    WriteLine(lBoxChars.Vertical, ConsoleTheme.DrawColor);
+    WriteAnsiText(ConsoleTheme.Text, ContentLine);
+    WriteAnsiLine(ConsoleTheme.Draw, lBoxChars.Vertical);
   end;
 
   // Bottom border
   Line := lBoxChars.BottomLeft + StringOfChar(lBoxChars.Horizontal, Width - 2) + lBoxChars.BottomRight;
-  WriteLine(Line, ConsoleTheme.DrawColor);
+  WriteAnsiLine(ConsoleTheme.Draw, Line);
 end;
 
 // ============================================================================
@@ -1662,41 +1821,35 @@ begin
 
       // Top border
       Line := BoxChars.TopLeft + StringOfChar(BoxChars.Horizontal, MaxWidth - 2) + BoxChars.TopRight;
-      WriteLine(Line, ConsoleTheme.DrawColor);
+      WriteAnsiLine(ConsoleTheme.Draw, Line);
 
       // Title
       if Title <> '' then
       begin
-        WriteColoredText(BoxChars.Vertical + ' ', ConsoleTheme.DrawColor);
-        WriteColoredText(PadRight(Title, MaxWidth - 4), ConsoleTheme.TextHighlightColor);
-        WriteLine(' ' + BoxChars.Vertical, ConsoleTheme.DrawColor);
+        WriteAnsiText(ConsoleTheme.Draw, BoxChars.Vertical + ' ');
+        WriteAnsiText(ConsoleTheme.HighlightText, PadRight(Title, MaxWidth - 4));
+        WriteAnsiLine(ConsoleTheme.Draw, ' ' + BoxChars.Vertical);
 
         Line := BoxChars.LeftJoin + StringOfChar(BoxChars.Horizontal, MaxWidth - 2) + BoxChars.RightJoin;
-        WriteLine(Line, ConsoleTheme.DrawColor);
+        WriteAnsiLine(ConsoleTheme.Draw, Line);
       end;
 
       // Items
       for I := 0 to High(Items) do
       begin
-        WriteColoredText(BoxChars.Vertical + ' ', ConsoleTheme.DrawColor);
+        WriteAnsiText(ConsoleTheme.Draw, BoxChars.Vertical + ' ');
         if I = SelectedIndex then
-        begin
-          SaveColors;
-          TextBackground(ConsoleTheme.BackgroundHighlightColor);
-          TextColor(ConsoleTheme.TextHighlightColor);
-          Write('> ' + PadRight(Items[I], MaxWidth - 6) + ' ');
-          RestoreSavedColors;
-        end
+          WriteAnsiText(ConsoleTheme.Highlight, '> ' + PadRight(Items[I], MaxWidth - 6) + ' ')
         else
-          WriteColoredText('  ' + PadRight(Items[I], MaxWidth - 6) + ' ', ConsoleTheme.TextColor);
-        WriteLine(BoxChars.Vertical, ConsoleTheme.DrawColor);
+          WriteAnsiText(ConsoleTheme.Text, '  ' + PadRight(Items[I], MaxWidth - 6) + ' ');
+        WriteAnsiLine(ConsoleTheme.Draw, BoxChars.Vertical);
       end;
 
       // Bottom border
       Line := BoxChars.BottomLeft + StringOfChar(BoxChars.Horizontal, MaxWidth - 2) + BoxChars.BottomRight;
-      WriteLine(Line, ConsoleTheme.DrawColor);
+      WriteAnsiLine(ConsoleTheme.Draw, Line);
 
-      WriteLine(Hint, DarkGray);
+      WriteAnsiLine(ConsoleTheme.Symbols, Hint);
       FlushOutput;
 
       Key := GetKey;
@@ -1783,7 +1936,7 @@ begin
   FStartX := GetCursorPosition.X;
   FStartY := GetCursorPosition.Y;
 
-  WriteLine(FTitle, ConsoleTheme.TextColor);
+  WriteAnsiLine(ConsoleTheme.Text, FTitle);
   if FMaxValue > 0 then
     DrawDeterminate
   else
@@ -1807,17 +1960,17 @@ begin
   FilledWidth := (FCurrent * FWidth) div FMaxValue;
   Bar := '[' + StringOfChar('=', FilledWidth) + StringOfChar(' ', FWidth - FilledWidth) + ']';
   GotoXY(FStartX, FStartY + 1);
-  WriteColoredText(Bar, ConsoleTheme.TextHighlightColor);
-  Write(Format(' %d%%', [Percent]));
+  WriteAnsiText(ConsoleTheme.HighlightText, Bar);
+  WriteAnsiText(ConsoleTheme.Text, Format(' %3d%%', [Percent]));
 end;
 
 procedure TConsoleProgress.DrawIndeterminate;
 begin
   GotoXY(FStartX, FStartY + 1);
-  WriteColoredText('[', ConsoleTheme.DrawColor);
-  WriteColoredText(FSpinnerChars[FSpinnerIndex + 1], ConsoleTheme.TextHighlightColor);
-  WriteColoredText(']', ConsoleTheme.DrawColor);
-  Write(' Processing...');
+  WriteAnsiText(ConsoleTheme.Draw, '[');
+  WriteAnsiText(ConsoleTheme.HighlightText, FSpinnerChars[FSpinnerIndex + 1]);
+  WriteAnsiText(ConsoleTheme.Draw, ']');
+  WriteAnsiText(ConsoleTheme.Text, ' Processing...');
   FSpinnerIndex := (FSpinnerIndex + 1) mod Length(FSpinnerChars);
 end;
 
@@ -1853,7 +2006,7 @@ begin
     DrawDeterminate;
   end;
   GotoXY(FStartX, FStartY + 2);
-  WriteLine('Done!', Green);
+  WriteAnsiLine(ConsoleTheme.HighlightText, 'Done!');
 end;
 
 function Progress(const Title: string; MaxValue: Integer): IProgress;
@@ -1879,11 +2032,11 @@ function Confirm(const Question: string; DefaultYes: Boolean): Boolean;
 var
   Response: string;
 begin
-  Write(Question + ' [Y/N]');
+  WriteAnsiText(ConsoleTheme.Text, Question + ' ');
   if DefaultYes then
-    Write(' (Y): ')
+    WriteAnsiText(ConsoleTheme.HighlightText, '[Y/n]: ')
   else
-    Write(' (N): ');
+    WriteAnsiText(ConsoleTheme.HighlightText, '[y/N]: ');
   ReadLn(Response);
   Response := Trim(UpperCase(Response));
   if Response = '' then
@@ -1898,10 +2051,13 @@ var
   Response: string;
   Choice: Integer;
 begin
-  WriteLn(Question);
+  WriteAnsiLine(ConsoleTheme.HighlightText, Question);
   for I := 0 to High(Options) do
-    WriteLn(Format('  [%d] %s', [I + 1, Options[I]]));
-  Write('Your choice: ');
+  begin
+    WriteAnsiText(ConsoleTheme.Symbols, Format('  [%d] ', [I + 1]));
+    WriteAnsiLine(ConsoleTheme.Text, Options[I]);
+  end;
+  WriteAnsiText(ConsoleTheme.HighlightText, 'Your choice: ');
   ReadLn(Response);
   if TryStrToInt(Trim(Response), Choice) then
   begin
@@ -2113,13 +2269,26 @@ begin
 end;
 
 // ============================================================================
+// CONSOLE THEME FUNCTIONS
+// ============================================================================
+
+procedure SetConsoleTheme(const Theme: TConsoleColorStyle);
+begin
+  ConsoleTheme := Theme;
+  GThemeReset  := STYLE_RESETALL + ANSI_BG[Theme.Background];
+  TextBackground(Theme.Background);
+end;
+
+// ============================================================================
 
 initialization
   GLock := TObject.Create;
   GSavedCursorX := 0;
   GSavedCursorY := 0;
-  GForeGround := Ord(ConsoleTheme.TextColor);
-  GBackGround := Ord(ConsoleTheme.BackgroundColor);
+  GForeGround  := Ord(TConsoleColor.Gray);
+  GBackGround  := Ord(TConsoleColor.Black) shl 4;
+  GThemeReset  := STYLE_RESETALL + BACK_BLACK;
+  EnableANSIColorConsole;
 
 finalization
 {$IFDEF LINUX}

@@ -1,4 +1,4 @@
-program ConsoleDemo;
+﻿program ConsoleDemo;
 
 {$APPTYPE CONSOLE}
 
@@ -250,30 +250,39 @@ begin
 end;
 
 procedure ShowThemeExample;
+
+  procedure DemoCurrentTheme(const AName: string);
+  begin
+    WriteHeader(AName + ' Theme', 60);
+    WriteInfo('Info message');
+    WriteSuccess('Success message');
+    WriteWarning('Warning message');
+    WriteError('Error message');
+    Box(AName, ['Box drawn with ' + AName + ' theme', 'Colors + BoxStyle applied globally']);
+    WriteLn;
+  end;
+
+var
+  OriginalTheme: TConsoleColorStyle;
 begin
   ClrScr;
-  WriteHeader('Theme Demo');
+  WriteHeader('Theme Demo — SetConsoleTheme', 80);
+  WriteLn;
+  WriteLine('SetConsoleTheme() changes ConsoleTheme globally; all widgets follow it.', White);
   WriteLn;
 
-  WriteLine('ConsoleTheme controls global styling for all widgets.', White);
-  WriteLn;
-
-  WriteLine('Default theme:', Cyan);
-  Box('Default', ['This uses the default theme']);
-  WriteLn;
-
-  // Change theme
-  ConsoleTheme.TextColor := Yellow;
-  ConsoleTheme.DrawColor := Magenta;
-  ConsoleTheme.BoxStyle := bsDouble;
-
-  WriteLine('Custom theme (Yellow/Magenta/Double):', Cyan);
-  Box('Custom', ['This uses the modified theme!']);
-
-  // Reset
-  ConsoleTheme.TextColor := Cyan;
-  ConsoleTheme.DrawColor := White;
-  ConsoleTheme.BoxStyle := bsRounded;
+  OriginalTheme := ConsoleTheme;
+  try
+    SetConsoleTheme(ConsoleThemeDefault);    DemoCurrentTheme('Default');
+    SetConsoleTheme(ConsoleThemeClassic);   DemoCurrentTheme('Classic');
+    SetConsoleTheme(ConsoleThemeMatrix);    DemoCurrentTheme('Matrix');
+    SetConsoleTheme(ConsoleThemeSunset);    DemoCurrentTheme('Sunset');
+    SetConsoleTheme(ConsoleThemeOcean);     DemoCurrentTheme('Ocean');
+    SetConsoleTheme(ConsoleThemeMonochrome);DemoCurrentTheme('Monochrome');
+    SetConsoleTheme(ConsoleThemeMagenta);   DemoCurrentTheme('Magenta');
+  finally
+    SetConsoleTheme(OriginalTheme);
+  end;
 end;
 
 begin
