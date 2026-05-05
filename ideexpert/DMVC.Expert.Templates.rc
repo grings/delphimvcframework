@@ -9,6 +9,7 @@
 _LICENSE_HEADER RCDATA "templates\\_license_header.tpro"
 PROGRAM_DPR RCDATA "templates\\program.dpr.tpro"
 PROGRAM_INDYDIRECT_DPR RCDATA "templates\\program_indydirect.dpr.tpro"
+PROGRAM_WEBBROKER_DPR RCDATA "templates\\program_webbroker.dpr.tpro"
 PROGRAM_HTTPSYS_DPR RCDATA "templates\\program_httpsys.dpr.tpro"
 PROGRAM_SERVICE_DPR RCDATA "templates\\program_service.dpr.tpro"
 PROGRAM_SERVICE_INDYDIRECT_DPR RCDATA "templates\\program_service_indydirect.dpr.tpro"

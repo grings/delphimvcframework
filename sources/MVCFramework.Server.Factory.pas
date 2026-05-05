@@ -40,7 +40,7 @@ interface
 
 uses
   System.SysUtils,
-  MVCFramework, MVCFramework.Server.Intf;
+  MVCFramework, MVCFramework.Server.Intf, MVCFramework.Commons;
 
 type
   TMVCEngineConfigProc = reference to procedure(AEngine: TMVCEngine);
@@ -55,25 +55,31 @@ type
     /// </summary>
     class function CreateIndyDirect(AEngine: TMVCEngine): IMVCIndyServer;
 
+{$IFDEF MSWINDOWS}
     /// <summary>
     /// Build a HTTP.sys (Windows kernel-mode) server bound to an
     /// already-configured engine.
     /// </summary>
     class function CreateHttpSys(AEngine: TMVCEngine): IMVCServer;
+{$ENDIF}
 
     /// <summary>
-    /// Build a WebBroker server. WebBroker creates a TMVCEngine for each
-    /// TWebModule instance, so the caller passes a configuration procedure
-    /// invoked once per WebModule.
+    /// Build a WebBroker server. WebBroker creates a TMVCEngine per TWebModule,
+    /// so both callbacks are invoked once per WebModule:
+    ///   AConfigAction   - sets TMVCConfig values before the config is frozen.
+    ///   AEngineConfig   - adds controllers and middleware after creation.
     /// </summary>
-    class function CreateWebBroker(AEngineConfig: TMVCEngineConfigProc): IMVCServer;
+    class function CreateWebBroker(AConfigAction: TProc<TMVCConfig>;
+      AEngineConfig: TMVCEngineConfigProc = nil): IMVCServer;
   end;
 
 implementation
 
 uses
   MVCFramework.Server.Indy,
+{$IFDEF MSWINDOWS}
   MVCFramework.Server.HttpSys,
+{$ENDIF}
   MVCFramework.Server.WebBroker;
 
 class function TMVCServerFactory.CreateIndyDirect(AEngine: TMVCEngine): IMVCIndyServer;
@@ -81,20 +87,18 @@ begin
   Result := TMVCIndyServer.Create(AEngine);
 end;
 
+{$IFDEF MSWINDOWS}
 class function TMVCServerFactory.CreateHttpSys(AEngine: TMVCEngine): IMVCServer;
 begin
   Result := TMVCHttpSysServer.Create(AEngine);
 end;
+{$ENDIF}
 
 class function TMVCServerFactory.CreateWebBroker(
+  AConfigAction: TProc<TMVCConfig>;
   AEngineConfig: TMVCEngineConfigProc): IMVCServer;
 begin
-  Result := TMVCWebBrokerServer.Create(
-    procedure(AEngine: TMVCEngine)
-    begin
-      if Assigned(AEngineConfig) then
-        AEngineConfig(AEngine);
-    end);
+  Result := TMVCWebBrokerServer.Create(AConfigAction, AEngineConfig);
 end;
 
 end.

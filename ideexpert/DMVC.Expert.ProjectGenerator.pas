@@ -435,10 +435,14 @@ begin
   else if AConfig.S[TConfigKey.program_type] = TProgramTypes.APACHE then
     // Apache module library (WebBroker)
     SaveFile(AProjectName + '.dpr', RenderTemplate('program_apache.dpr.tpro', AConfig))
+  else if AConfig.S[TConfigKey.program_type] = TProgramTypes.FASTCGI_CONSOLE then
+    // FastCGI: still uses WebBroker infrastructure (TFastCGIApplication), no IMVCServer
+    SaveFile(AProjectName + '.dpr', RenderTemplate('program.dpr.tpro', AConfig))
   else
   begin
-    // Console/FastCGI use standard program template
-    SaveFile(AProjectName + '.dpr', RenderTemplate('program.dpr.tpro', AConfig));
+    // Console WebBroker: use IMVCServer abstraction via TMVCServerFactory.CreateWebBroker
+    SaveFile(AProjectName + '.dpr', RenderTemplate('program_webbroker.dpr.tpro', AConfig));
+    SaveFile('EngineConfigU.pas', RenderTemplate('engineconfig.pas.tpro', AConfig));
   end;
 
   // Generate .dproj with correct output paths (exe -> .\bin, dcu -> .\$(Platform)\$(Config))
@@ -465,10 +469,16 @@ begin
     SaveFile(CONTROLLER_PEOPLE_UNIT + '.pas',
       RenderTemplate('controller_people.pas.tpro', AConfig));
 
-  // WebModule is only generated for WebBroker server engine
-  if (AConfig.S[TConfigKey.program_server_engine] = 'webbroker') or
-     (AConfig.S[TConfigKey.program_server_engine] = '') then
+  // WebModule only for WebBroker non-console cases (ISAPI, Apache, Windows Service, FastCGI).
+  // Console WebBroker uses EngineConfigU + TMVCServerFactory.CreateWebBroker instead.
+  if ((AConfig.S[TConfigKey.program_server_engine] = 'webbroker') or
+      (AConfig.S[TConfigKey.program_server_engine] = '')) and
+     ((AConfig.S[TConfigKey.program_type] = TProgramTypes.WINDOWS_SERVICE) or
+      (AConfig.S[TConfigKey.program_type] = TProgramTypes.ISAPI) or
+      (AConfig.S[TConfigKey.program_type] = TProgramTypes.APACHE) or
+      (AConfig.S[TConfigKey.program_type] = TProgramTypes.FASTCGI_CONSOLE)) then
   begin
+    AConfig.B['program.uses_webmodule'] := True;
     SaveFile(WEBMODULE_UNIT + '.pas', RenderTemplate('webmodule.pas.tpro', AConfig));
     SaveFile(WEBMODULE_UNIT + '.dfm', RenderTemplate('webmodule.dfm.tpro', AConfig));
   end;

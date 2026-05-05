@@ -587,12 +587,23 @@ begin
       LSource := TTestTemplateEngine.Render('program_apache.dpr.tpro', AConfig);
       TFile.WriteAllText(TPath.Combine(AOutputDir, AConfig.S[TConfigKey.program_name] + '.dpr'), LSource);
     end
-    else
+    else if AConfig.S[TConfigKey.program_type] = TProgramTypes.FASTCGI_CONSOLE then
     begin
-      // Console/FastCGI
-      LogVerbose('Generating program.dpr...');
+      // FastCGI: still uses WebBroker infrastructure (TFastCGIApplication), no IMVCServer
+      LogVerbose('Generating FastCGI program.dpr...');
       LSource := TTestTemplateEngine.Render('program.dpr.tpro', AConfig);
       TFile.WriteAllText(TPath.Combine(AOutputDir, AConfig.S[TConfigKey.program_name] + '.dpr'), LSource);
+    end
+    else
+    begin
+      // Console WebBroker: use IMVCServer abstraction via TMVCServerFactory.CreateWebBroker
+      LogVerbose('Generating WebBroker console program.dpr...');
+      LSource := TTestTemplateEngine.Render('program_webbroker.dpr.tpro', AConfig);
+      TFile.WriteAllText(TPath.Combine(AOutputDir, AConfig.S[TConfigKey.program_name] + '.dpr'), LSource);
+
+      LogVerbose('Generating EngineConfigU.pas...');
+      LSource := TTestTemplateEngine.Render('engineconfig.pas.tpro', AConfig);
+      TFile.WriteAllText(TPath.Combine(AOutputDir, 'EngineConfigU.pas'), LSource);
     end;
 
     // Main Controllers.HomeU - only when it would contain at least one method
@@ -624,11 +635,17 @@ begin
       TFile.WriteAllText(TPath.Combine(AOutputDir, 'Controllers.PeopleU.pas'), LSource);
     end;
 
-    // WebModule is only generated for WebBroker server engine
-    if (AConfig.S[TConfigKey.program_server_engine] = 'webbroker') or
-       (AConfig.S[TConfigKey.program_server_engine] = '') then
+    // WebModule only for WebBroker non-console cases (ISAPI, Apache, Windows Service, FastCGI).
+    // Console WebBroker uses EngineConfigU + TMVCServerFactory.CreateWebBroker instead.
+    if ((AConfig.S[TConfigKey.program_server_engine] = 'webbroker') or
+        (AConfig.S[TConfigKey.program_server_engine] = '')) and
+       ((AConfig.S[TConfigKey.program_type] = TProgramTypes.WINDOWS_SERVICE) or
+        (AConfig.S[TConfigKey.program_type] = TProgramTypes.ISAPI) or
+        (AConfig.S[TConfigKey.program_type] = TProgramTypes.APACHE) or
+        (AConfig.S[TConfigKey.program_type] = TProgramTypes.FASTCGI_CONSOLE)) then
     begin
-      // Generate webmodule
+      AConfig.B['program.uses_webmodule'] := True;
+
       LogVerbose('Generating webmodule...');
       LSource := TTestTemplateEngine.Render('webmodule.pas.tpro', AConfig);
       TFile.WriteAllText(TPath.Combine(AOutputDir, AConfig.S[TConfigKey.webmodule_unit_name] + '.pas'), LSource);

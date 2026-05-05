@@ -32,10 +32,14 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+{{if program_uses_webmodule}}
         <DCCReference Include="{{:webmodule_unit_name}}.pas">
             <Form>{{:webmodule_classname_short}}</Form>
             <DesignClass>TWebModule</DesignClass>
         </DCCReference>
+{{else}}
+        <DCCReference Include="EngineConfigU.pas"/>
+{{endif}}
 {{if controller_main_generate}}
         <DCCReference Include="{{:controller_unit_name}}.pas"/>
 {{endif}}

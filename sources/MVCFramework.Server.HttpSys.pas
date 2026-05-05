@@ -38,10 +38,6 @@ unit MVCFramework.Server.HttpSys;
 
 {$I dmvcframework.inc}
 
-{$IFNDEF MSWINDOWS}
-{$MESSAGE FATAL 'MVCFramework.Server.HttpSys is only available on Windows (HTTP.sys is a Windows kernel-mode component).'}
-{$ENDIF}
-
 interface
 
 {$IFDEF MSWINDOWS}

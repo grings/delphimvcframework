@@ -30,7 +30,7 @@ interface
 
 uses
   System.SysUtils, System.Classes,
-  IdHTTPWebBrokerBridge, IdContext,
+  IdContext,
   MVCFramework, MVCFramework.Server.Intf, MVCFramework.Commons;
 
 type
@@ -38,13 +38,15 @@ type
 
   /// <summary>
   /// IMVCServer implementation using WebBroker (TIdHTTPWebBrokerBridge).
-  /// Since WebBroker manages TWebModule lifecycle internally, this server
-  /// accepts a configuration procedure that is called each time a WebModule
-  /// (and its TMVCEngine) is created by the bridge.
+  /// WebBroker manages the TWebModule lifecycle internally. This server
+  /// accepts two separate callbacks per request cycle:
+  ///   AConfigAction   - called during TMVCEngine.Create to set config values
+  ///                     (before the config is frozen); may be nil for defaults.
+  ///   AEngineConfigProc - called after Create to add controllers/middleware.
   /// </summary>
   TMVCWebBrokerServer = class(TInterfacedObject, IMVCServer)
   private
-    FBridge: TIdHTTPWebBrokerBridge;
+    FBridge: TObject; // TIdHTTPWebBrokerBridge — kept opaque to avoid implicit package import
     FEngine: TMVCEngine;
     FPort: Integer;
     FHost: string;
@@ -85,57 +87,73 @@ type
     procedure SetHTTPSConfigurator(AValue: TMVCHTTPSConfigurator);
     function GetHTTPSConfigurator: TMVCHTTPSConfigurator;
   public
-    constructor Create(AEngineConfigProc: TMVCEngineConfigProc); overload;
+    constructor Create(AConfigAction: TProc<TMVCConfig>; AEngineConfigProc: TMVCEngineConfigProc = nil);
     destructor Destroy; override;
     procedure Listen(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     procedure Stop;
     function IsRunning: Boolean;
     /// <summary>
-    /// Underlying TIdHTTPWebBrokerBridge. Exposed for HTTPS providers
-    /// (HTTPSConfigurator callbacks) — application code should not touch
-    /// it directly.
+    /// Underlying TIdHTTPWebBrokerBridge as TObject. HTTPS providers cast it
+    /// to TIdHTTPWebBrokerBridge to access engine-specific knobs — application
+    /// code should not touch it directly.
     /// </summary>
-    property Bridge: TIdHTTPWebBrokerBridge read FBridge;
+    property Bridge: TObject read FBridge;
   end;
 
 implementation
 
+{$R MVCFramework.Server.WebBroker.dfm}
+
 uses
+  IdHTTPWebBrokerBridge,
   Web.HTTPApp, Web.WebReq;
 
 type
   TMVCAutoWebModule = class(TWebModule)
-    procedure AutoWebModuleCreate(Sender: TObject);
-    procedure AutoWebModuleDestroy(Sender: TObject);
   private
     FEngine: TMVCEngine;
+  protected
+    procedure Loaded; override;
+  public
+    destructor Destroy; override;
   end;
 
 var
+  _ConfigAction: TProc<TMVCConfig>;
   _EngineConfigProc: TMVCEngineConfigProc;
 
-procedure TMVCAutoWebModule.AutoWebModuleCreate(Sender: TObject);
+{ Typed accessor — avoids repeating the cast at every FBridge access site. }
+function BridgeOf(AServer: TMVCWebBrokerServer): TIdHTTPWebBrokerBridge; inline;
 begin
-  {$WARN SYMBOL_DEPRECATED OFF}
-  FEngine := TMVCEngine.Create(Self);
-  {$WARN SYMBOL_DEPRECATED ON}
+  Result := TIdHTTPWebBrokerBridge(AServer.Bridge);
+end;
+
+procedure TMVCAutoWebModule.Loaded;
+begin
+  inherited;
+  FEngine := TMVCEngine.Create(Self, _ConfigAction);
   if Assigned(_EngineConfigProc) then
     _EngineConfigProc(FEngine);
 end;
 
-procedure TMVCAutoWebModule.AutoWebModuleDestroy(Sender: TObject);
+destructor TMVCAutoWebModule.Destroy;
 begin
   FEngine.Free;
+  inherited;
 end;
 
 { TMVCWebBrokerServer }
 
-constructor TMVCWebBrokerServer.Create(AEngineConfigProc: TMVCEngineConfigProc);
+constructor TMVCWebBrokerServer.Create(AConfigAction: TProc<TMVCConfig>; AEngineConfigProc: TMVCEngineConfigProc);
+var
+  LBridge: TIdHTTPWebBrokerBridge;
 begin
   inherited Create;
+  _ConfigAction := AConfigAction;
   _EngineConfigProc := AEngineConfigProc;
-  FBridge := TIdHTTPWebBrokerBridge.Create(nil);
-  FBridge.OnParseAuthentication := OnParseAuthentication;
+  LBridge := TIdHTTPWebBrokerBridge.Create(nil);
+  LBridge.OnParseAuthentication := OnParseAuthentication;
+  FBridge := LBridge;
   FEngine := nil;
   FPort := 8080;
   FHost := '0.0.0.0';
@@ -147,9 +165,10 @@ end;
 
 destructor TMVCWebBrokerServer.Destroy;
 begin
-  if FBridge.Active then
+  if BridgeOf(Self).Active then
     Stop;
   FBridge.Free;
+  _ConfigAction := nil;
   _EngineConfigProc := nil;
   inherited;
 end;
@@ -171,6 +190,8 @@ begin
 end;
 
 procedure TMVCWebBrokerServer.Listen(APort: Integer; const AHost: string);
+var
+  LBridge: TIdHTTPWebBrokerBridge;
 begin
   FPort := APort;
   FHost := AHost;
@@ -183,23 +204,24 @@ begin
   WebRequestHandler.CacheConnections := True;
   WebRequestHandler.MaxConnections := FMaxConnections;
 
-  FBridge.DefaultPort := FPort;
-  FBridge.MaxConnections := FMaxConnections;
-  FBridge.ListenQueue := FListenQueue;
+  LBridge := BridgeOf(Self);
+  LBridge.DefaultPort := FPort;
+  LBridge.MaxConnections := FMaxConnections;
+  LBridge.ListenQueue := FListenQueue;
 
   ConfigureHTTPS;
 
-  FBridge.Active := True;
+  LBridge.Active := True;
 end;
 
 procedure TMVCWebBrokerServer.Stop;
 begin
-  FBridge.Active := False;
+  BridgeOf(Self).Active := False;
 end;
 
 function TMVCWebBrokerServer.IsRunning: Boolean;
 begin
-  Result := FBridge.Active;
+  Result := BridgeOf(Self).Active;
 end;
 
 procedure TMVCWebBrokerServer.OnParseAuthentication(AContext: TIdContext;
