@@ -2912,8 +2912,6 @@ var
   lValue: TValue;
   lIsNullableType: Boolean;
   lHasValue: Boolean;
-const
-  EMPTY_GUID: TGUID = '{00000000-0000-0000-0000-000000000000}';
 begin
   // No PK defined or no metadata yet: treat as new (caller is mid-construction).
   if (fTableMap = nil) or fTableMap.fPrimaryKeyFieldName.IsEmpty then
@@ -2922,26 +2920,18 @@ begin
   lHasValue := TryGetPKValue(lValue, lIsNullableType);
 
   // Nullable PK: TryGetPKValue already returned the right answer
-  // (HasValue=False means PK is unset).
+  // (HasValue=False means PK is unset). Any record-typed PK reaches here
+  // through the Nullable path - TryGetPKValue raises on non-Nullable
+  // record PKs, so the case below only sees the plain ordinal/string kinds.
   if lIsNullableType then
     Exit(not lHasValue);
 
-  // Plain PK: TValue.IsEmpty is True only for tkUnknown, so for tkInt64=0 etc.
-  // we have to inspect the value explicitly. Default-constructed values
-  // (0, '', empty GUID) all map to "new".
+  // Plain PK: default-constructed values (0, '') map to "new".
   case lValue.Kind of
     tkInteger, tkInt64:
       Result := lValue.AsInt64 = 0;
     tkString, tkLString, tkWString, tkUString:
       Result := lValue.AsString = '';
-    tkRecord:
-      // Plain TGUID: compare against the all-zeros GUID. Any other record
-      // shape is not a known PK type, so treat the row as persisted to avoid
-      // surprising side effects.
-      if lValue.IsType<TGUID>() then
-        Result := IsEqualGUID(lValue.AsType<TGUID>(), EMPTY_GUID)
-      else
-        Result := False;
   else
     Result := False;
   end;
