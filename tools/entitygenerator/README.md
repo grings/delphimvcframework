@@ -2,9 +2,7 @@
 
 Generates `TMVCActiveRecord` entity classes from a database schema.
 
-Available in two versions:
-- **MVCEntGen** - Command-line tool (recommended; built on `EntGen.Core.pas`).
-- **MVCAREntitiesGenerator** - legacy VCL GUI. Predates `EntGen.Core.pas` and uses its own emission code; new options like `AUTO_REQUIRED` / `AUTO_MAXLENGTH` are CLI-only.
+**MVCEntGen** - Command-line tool (recommended; built on `EntGen.Core.pas`).
 
 ## MVCEntGen (CLI)
 
@@ -21,6 +19,9 @@ mvcentgen --config myproject.env --output EntitiesU.pas
 | `--config <file>` | Path to `.env` configuration file (**required**) |
 | `--connection <name>` | FireDAC connection definition name (overrides config) |
 | `--output <file>` | Output `.pas` file path (overrides config) |
+| `--log <file>` | Write structured log to file (in addition to console output) |
+| `--verbose` / `-v` | Include Debug-level messages (e.g. skipped tables, type mismatches) |
+| `--no-color` | Disable ANSI colored console output (auto-disabled when not a TTY) |
 | `--no-auto-required` | Skip `[MVCRequired]` on NOT NULL non-PK columns (default: emit) |
 | `--no-auto-maxlength` | Skip `[MVCMaxLength(N)]` on bounded VARCHAR columns (default: emit) |
 | `--no-auto-audit` | Skip `[MVCAudit*]` on convention-named audit columns (default: emit) |
@@ -31,7 +32,7 @@ Both `--option` and `-option` syntax are supported.
 
 ### Configuration File
 
-The configuration uses a standard `.env` format (key=value, `#` comments). See `sample_config.env` for a complete example.
+The configuration uses a standard `.env` format (key=value, `#` comments). See the annotated example configs in `../bin/examples/` for reference.
 
 #### Database Connection
 
@@ -194,6 +195,18 @@ EXCLUDE_TABLES=__*,tmp_*,/^sys/
 
 When `TABLES` is empty (default), all tables are included. `EXCLUDE_TABLES` is applied after `TABLES`.
 
+#### Class Name Overrides
+
+By default the generator derives the class name from the table name (`order_details` → `TOrderDetails`). Use `MAP_<tablename>` keys to override any name:
+
+```env
+MAP_customers=TCustomer
+MAP_orders=TOrder
+MAP_order_details=TOrderLine
+```
+
+The key suffix is case-insensitive and must match the exact table name (not a pattern). Tables not listed here get auto-generated names.
+
 ### Examples
 
 ```bash
@@ -206,7 +219,26 @@ mvcentgen --config myproject.env --connection PROD_DB --output ..\src\EntitiesU.
 # Generate for specific tables only (configured in .env)
 # TABLES=customers,orders,order_items
 mvcentgen --config myproject.env
+
+# Write verbose output and a structured log file for CI diagnostics
+mvcentgen --config myproject.env --verbose --log entgen.log
 ```
+
+Ready-to-run annotated configs are in `../bin/examples/`:
+
+| File | What it shows |
+|------|---------------|
+| `ex00_simple.env` | All defaults, all tables — minimal config |
+| `ex01_basic.env` | NAME_CASE, GENERATE_MAPPING, TABLES filter, MAP_ overrides |
+| `ex02_audit.env` | AUTO_AUDIT with custom column names |
+| `ex03_softdelete.env` | AUTO_SOFT_DELETE (timestamp + flag modes) |
+| `ex04_readonly_refresh.env` | READONLY_COLUMNS / REFRESH_COLUMNS |
+| `ex05_novalidation.env` | All auto-* flags disabled |
+| `ex06_abstract.env` | CLASS_AS_ABSTRACT=true |
+| `ex07_filtering.env` | TABLES with wildcards and EXCLUDE_TABLES |
+| `ex08_fullfeatures.env` | All features combined |
+
+Run `run_all_and_verify.bat` from that folder to regenerate all nine `.pas` outputs and compile them in one step (requires a running PostgreSQL with the `activerecorddb` test database).
 
 ### Generated Output
 
@@ -222,14 +254,17 @@ For each selected table, the tool generates:
 ## Project Structure
 
 ```
-EntGen.Core.pas                  Core engine (CLI; the GUI predates it)
-EntGen.CLIMain.pas               CLI logic (.env parsing, argument handling)
+EntGen.Core.pas                  Core engine (schema introspection, code generation)
+EntGen.CLIMain.pas               CLI entry point (.env parsing, argument handling)
+UtilsU.pas                       Shared utilities (console helpers, etc.)
 MVCEntGen.dpr                    CLI program
 MVCEntGen.dproj                  CLI project file
-MVCAREntitiesGenerator.dpr       GUI program
-MVCAREntitiesGenerator.dproj     GUI project file
-MainFormU.pas / .dfm             GUI form
-sample_config.env                Example configuration file
+tests/
+  EntGenTestsU.pas               Unit tests for the core engine
+../bin/
+  MVCEntGen.exe                  Pre-built CLI binary (Win32)
+  examples/                      Annotated .env configs + generated .pas outputs
+    run_all_and_verify.bat        Generate all examples and compile them
 ```
 
 ## Building
@@ -238,9 +273,6 @@ sample_config.env                Example configuration file
 # CLI
 call "C:\Program Files (x86)\Embarcadero\Studio\37.0\bin\rsvars.bat"
 msbuild MVCEntGen.dproj /p:Config=Release /p:Platform=Win32
-
-# GUI
-msbuild MVCAREntitiesGenerator.dproj /p:Config=Release /p:Platform=Win32
 ```
 
 Output goes to `..\bin\`.
