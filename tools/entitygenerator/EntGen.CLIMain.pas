@@ -85,105 +85,105 @@ type
 
 procedure PrintBanner;
 begin
-  MVCFramework.Console.WriteLine('');
-  MVCFramework.Console.WriteHeader(
+  WriteLine('');
+  WriteHeader(
     Format(' DMVCFramework Entity Generator CLI  v%s ', [APP_VERSION]),
     80, TConsoleColor.Cyan);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     'Copyright (c) 2010-' + YearOf(Date).ToString + ' Daniele Teti',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine('');
+  WriteLine('');
 end;
 
 procedure PrintKeyValue(const AKey, AValue: string);
 begin
-  MVCFramework.Console.WriteColoredText('  ' + AKey + ': ', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine(AValue, TConsoleColor.Cyan);
+  WriteColoredText('  ' + AKey + ': ', TConsoleColor.Gray);
+  WriteLine(AValue, TConsoleColor.Cyan);
 end;
 
 procedure PrintUsage;
 begin
   PrintBanner;
-  MVCFramework.Console.WriteLine('Usage:', TConsoleColor.White);
-  MVCFramework.Console.WriteLine(
+  WriteLine('Usage:', TConsoleColor.White);
+  WriteLine(
     '  mvcentgen --config <file.env> [--connection <name>] [--output <file.pas>] [--log <file>]',
     TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('');
-  MVCFramework.Console.WriteLine('Options:', TConsoleColor.White);
-  MVCFramework.Console.WriteLine('  --config <file>        Path to .env configuration file (required)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --connection <name>    FireDAC connection definition name (overrides config)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --output <file>        Output .pas file path (overrides config)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --log <file>           Also write structured log to file', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --verbose              Include Debug-level messages (e.g. skipped tables)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --no-color             Disable ANSI colored console output', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --no-auto-required           Skip [MVCRequired] on NOT NULL non-PK columns (default: emit)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --no-auto-maxlength          Skip [MVCMaxLength(N)] on bounded VARCHAR columns (default: emit)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --no-auto-audit              Skip [MVCAudit*] on convention-named audit columns (default: emit)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --no-auto-soft-delete        Skip [MVCSoftDeleted] on convention-named columns (default: emit)', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('  --help                 Show this help message', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine('');
-  MVCFramework.Console.WriteLine('Config file format (.env):', TConsoleColor.White);
-  MVCFramework.Console.WriteLine(
+  WriteLine('');
+  WriteLine('Options:', TConsoleColor.White);
+  WriteLine('  --config <file>        Path to .env configuration file (required)', TConsoleColor.Gray);
+  WriteLine('  --connection <name>    FireDAC connection definition name (overrides config)', TConsoleColor.Gray);
+  WriteLine('  --output <file>        Output .pas file path (overrides config)', TConsoleColor.Gray);
+  WriteLine('  --log <file>           Also write structured log to file', TConsoleColor.Gray);
+  WriteLine('  --verbose              Include Debug-level messages (e.g. skipped tables)', TConsoleColor.Gray);
+  WriteLine('  --no-color             Disable ANSI colored console output', TConsoleColor.Gray);
+  WriteLine('  --no-auto-required           Skip [MVCRequired] on NOT NULL non-PK columns (default: emit)', TConsoleColor.Gray);
+  WriteLine('  --no-auto-maxlength          Skip [MVCMaxLength(N)] on bounded VARCHAR columns (default: emit)', TConsoleColor.Gray);
+  WriteLine('  --no-auto-audit              Skip [MVCAudit*] on convention-named audit columns (default: emit)', TConsoleColor.Gray);
+  WriteLine('  --no-auto-soft-delete        Skip [MVCSoftDeleted] on convention-named columns (default: emit)', TConsoleColor.Gray);
+  WriteLine('  --help                 Show this help message', TConsoleColor.Gray);
+  WriteLine('');
+  WriteLine('Config file format (.env):', TConsoleColor.White);
+  WriteLine(
     '  CONNECTION_DEF=MyConnection     # or set DRIVER_ID + SERVER + DATABASE + ...',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  SCHEMA=public                   # optional',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  OUTPUT_FILE=EntitiesU.pas',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  NAME_CASE=LowerCase             # LowerCase|UpperCase|CamelCase|PascalCase|SnakeCase|AsIs',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  FIELD_NAME_FORMAT=PascalCase    # PascalCase|AsIs (default: PascalCase)',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  GENERATE_MAPPING=true',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  CLASS_AS_ABSTRACT=false',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  TABLES=                         # optional: exact name, wildcard (TBL_*), regex (/^pattern$/)',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  EXCLUDE_TABLES=',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUTO_REQUIRED=true              # default: emit [MVCRequired] on NOT NULL non-PK columns',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUTO_MAXLENGTH=true             # default: emit [MVCMaxLength(N)] on bounded VARCHAR columns',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  READONLY_COLUMNS=tbl.col,tbl.col2  # CSV of table.column pairs to emit with foReadOnly',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  REFRESH_COLUMNS=tbl.col,tbl.col2   # CSV of table.column pairs to emit with foRefresh',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUTO_AUDIT=true                    # default: emit [MVCAudit*] on convention-named columns',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUDIT_CREATED_AT_NAME=created_at   # column name to recognize as MVCAuditCreatedAt',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUDIT_UPDATED_AT_NAME=updated_at   # column name to recognize as MVCAuditUpdatedAt',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUDIT_CREATED_BY_NAME=created_by   # column name to recognize as MVCAuditCreatedBy',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUDIT_UPDATED_BY_NAME=updated_by   # column name to recognize as MVCAuditUpdatedBy',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  AUTO_SOFT_DELETE=true              # default: emit [MVCSoftDeleted] on convention-named columns',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  SOFT_DELETE_TIMESTAMP_NAME=deleted_at  # CSV; column type must be NullableTDateTime',
     TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteLine(
+  WriteLine(
     '  SOFT_DELETE_FLAG_NAME=is_deleted,deleted  # CSV; column type must be Boolean',
     TConsoleColor.DarkGray);
 end;
@@ -369,18 +369,23 @@ begin
   lBuilder := LoggerProBuilder.WithDefaultMinimumLevel(lDefaultLevel);
 
   if AUseColors then
+  begin
     lBuilder := lBuilder
       .WriteToConsole
         .WithColors
         .WithUTF8Output
         .Done
+  end
   else
+  begin
     lBuilder := lBuilder
       .WriteToSimpleConsole
         .WithUTF8Output
         .Done;
+  end;
 
   if not ALogFile.IsEmpty then
+  begin
     lBuilder := lBuilder
       .WriteToFile
         .WithLogsFolder(TPath.GetDirectoryName(TPath.GetFullPath(ALogFile)))
@@ -388,21 +393,22 @@ begin
         .WithMaxBackupFiles(5)
         .WithMaxFileSizeInKB(5120)
         .Done;
+  end;
 
   Result := lBuilder.Build;
 end;
 
 procedure PrintResultBanner(const AResult: TEntGenResult; const AOutputFile: string);
 begin
-  MVCFramework.Console.WriteLine('');
-  MVCFramework.Console.WriteColoredText('Entities generated: ', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine(IntToStr(AResult.GeneratedCount), TConsoleColor.Yellow);
-  MVCFramework.Console.WriteColoredText('Tables skipped:     ', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine(IntToStr(AResult.SkippedCount), TConsoleColor.DarkGray);
-  MVCFramework.Console.WriteColoredText('Output file:        ', TConsoleColor.Gray);
-  MVCFramework.Console.WriteLine(AOutputFile, TConsoleColor.Cyan);
-  MVCFramework.Console.WriteLine('');
-  MVCFramework.Console.WriteSuccess('Done!');
+  WriteLine('');
+  WriteColoredText('Entities generated: ', TConsoleColor.Gray);
+  WriteLine(IntToStr(AResult.GeneratedCount), TConsoleColor.Yellow);
+  WriteColoredText('Tables skipped:     ', TConsoleColor.Gray);
+  WriteLine(IntToStr(AResult.SkippedCount), TConsoleColor.DarkGray);
+  WriteColoredText('Output file:        ', TConsoleColor.Gray);
+  WriteLine(AOutputFile, TConsoleColor.Cyan);
+  WriteLine('');
+  WriteSuccess('Done!');
 end;
 
 procedure RunCLI;
@@ -422,7 +428,7 @@ begin
   lVerbose := HasCmdSwitch('verbose') or HasCmdSwitch('v');
 
   if lUseColors then
-    MVCFramework.Console.EnableANSIColorConsole;
+    EnableANSIColorConsole;
 
   if HasCmdSwitch('help') or HasCmdSwitch('h') or (ParamCount = 0) then
   begin
@@ -434,8 +440,8 @@ begin
 
   if not GetCmdSwitch('config', lConfigFile) then
   begin
-    MVCFramework.Console.WriteError('--config parameter is required');
-    MVCFramework.Console.WriteLine('');
+    WriteError('--config parameter is required');
+    WriteLine('');
     PrintUsage;
     ExitCode := 1;
     Exit;
@@ -454,7 +460,7 @@ begin
   except
     on E: Exception do
     begin
-      MVCFramework.Console.WriteError(E.Message);
+      WriteError(E.Message);
       ExitCode := 1;
       Exit;
     end;
@@ -526,7 +532,7 @@ begin
       PrintKeyValue('Tables filter', string.Join(', ', lConfig.Tables));
     if Length(lConfig.ExcludeTables) > 0 then
       PrintKeyValue('Exclude filter', string.Join(', ', lConfig.ExcludeTables));
-    MVCFramework.Console.WriteLine('');
+    WriteLine('');
 
     lConnection := TFDConnection.Create(nil);
     try
@@ -536,20 +542,20 @@ begin
       except
         on E: Exception do
         begin
-          MVCFramework.Console.WriteError('Config error: ' + E.Message);
+          WriteError('Config error: ' + E.Message);
           ExitCode := 1;
           Exit;
         end;
       end;
 
       if lUseColors then
-        lSpinner := MVCFramework.Console.Spinner(
+        lSpinner := Spinner(
           '  Connecting to database...',
           TSpinnerStyle.ssDots,
           TConsoleColor.DarkCyan)
       else
       begin
-        MVCFramework.Console.WriteInfo('Connecting to database...');
+        WriteInfo('Connecting to database...');
         lSpinner := nil;
       end;
       try
@@ -563,13 +569,13 @@ begin
       except
         on E: Exception do
         begin
-          MVCFramework.Console.WriteError('Connection failed: ' + E.Message);
+          WriteError('Connection failed: ' + E.Message);
           ExitCode := 1;
           Exit;
         end;
       end;
-      MVCFramework.Console.WriteSuccess('Connected to database');
-      MVCFramework.Console.WriteLine('');
+      WriteSuccess('Connected to database');
+      WriteLine('');
 
       { Flush main-thread buffered writes before handing the console to the
         logger's async appender - without this, pipe-redirected stdout can
