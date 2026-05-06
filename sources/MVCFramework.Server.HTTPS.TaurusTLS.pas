@@ -140,10 +140,12 @@ begin
     procedure(AServer: IMVCServer)
     var
       LWB: TMVCWebBrokerServer;
+      LBridge: TIdHTTPWebBrokerBridge;
     begin
       LWB := AServer as TMVCWebBrokerServer;
-      LWB.Bridge.IOHandler := BuildTaurusTLSHandler(
-        LWB.Bridge,
+      LBridge := LWB.Bridge as TIdHTTPWebBrokerBridge;
+      LBridge.IOHandler := BuildTaurusTLSHandler(
+        LBridge,
         AServer.CertFile, AServer.KeyFile,
         AServer.RootCertFile, AServer.CertPassword);
     end;
