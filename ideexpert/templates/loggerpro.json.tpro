@@ -1,7 +1,5 @@
 {
   "configVersion": 1,
-  "minimumLevel": "Info",
-  "defaultTag": "{{:program_name}}",
   "appenders": [
 {{if logging_appender_console}}
     {
