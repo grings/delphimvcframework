@@ -231,10 +231,6 @@ begin
     Result := Result + '.0';
 end;
 
-threadvar
-  GStreamWriter: TStreamWriter;
-  GJsonWriter: TJsonTextWriter;
-
 var
   GPlanCache: TDictionary<TClass, TMVCStreamingPlan> = nil;
   GLock: TCriticalSection = nil;
@@ -379,10 +375,14 @@ end;
 
 class destructor TMVCStreamingJsonSerializer.ClassDestroy;
 begin
-  GPlanCache.Free;
-  GLock.Free;
-  GUtf8NoBom.Free;
-  GTypeSerializerProbe.Free;
+  // Best-effort cleanup; the unit's finalization section also runs through
+  // these globals as a safety net in case the linker / RTL skips this class
+  // destructor (some edge cases where the class is only reached through
+  // smart-linked indirect calls).
+  FreeAndNil(GPlanCache);
+  FreeAndNil(GLock);
+  FreeAndNil(GUtf8NoBom);
+  FreeAndNil(GTypeSerializerProbe);
 end;
 
 function GetOrBuildPlan(AClass: TClass): TMVCStreamingPlan;
@@ -1152,54 +1152,32 @@ begin
   AWriter.WriteEndObject;
 end;
 
-{ [PERF] Acquire the thread-local writer pair, bind it to AStream, and
-  return a ready-to-use TJsonTextWriter. The first call on a given thread
-  constructs the pair; every subsequent call reuses them. The
-  TStreamWriter's internal buffer keeps its capacity between requests
-  (no 8 KB re-alloc per call) and the TJsonTextWriter's configuration
-  only needs to be reset, not rebuilt. }
-function AcquireJsonWriter(const AStream: TStream): TJsonTextWriter;
-var
-  LLayout: TStreamWriterLayout;
+{ Create a fresh TStreamWriter/TJsonTextWriter pair bound to AStream. The
+  caller owns both objects and is responsible for freeing them (free the
+  TJsonTextWriter first, then the TStreamWriter).
+
+  Per-call allocation rather than threadvar reuse: the threadvar variant
+  leaked at thread termination (Indy worker threads dying when the pool
+  shrinks or at shutdown) because Delphi has no destructor hook for
+  threadvar slots — see issue #894. The 8 KB buffer alloc per request is
+  negligible next to the I/O and serialisation cost. }
+function CreateJsonWriterPair(const AStream: TStream;
+  out AStreamWriter: TStreamWriter): TJsonTextWriter;
 begin
-  if GStreamWriter = nil then
-  begin
-    GStreamWriter := TStreamWriter.Create(AStream, GUtf8NoBom, 8192);
-    GJsonWriter := TJsonTextWriter.Create(GStreamWriter);
-  end
-  else
-  begin
-    LLayout := TStreamWriterLayout(GStreamWriter);
-    LLayout.FStream := AStream;
-    LLayout.FBufferIndex := 0;  // empty the buffer so old bytes don't leak
-  end;
-  Result := GJsonWriter;
+  AStreamWriter := TStreamWriter.Create(AStream, GUtf8NoBom, 8192);
+  Result := TJsonTextWriter.Create(AStreamWriter);
   Result.StringEscapeHandling := TJsonStringEscapeHandling.Default;
   Result.Formatting := TJsonFormatting.None;
 end;
 
-{ [PARITY] Discard any partial output sitting in the thread-local writer
-  buffers after an EMVCStreamingFallback. The stream position/size are
-  rewound to AMark by the caller; we also zero the TStreamWriter buffer
-  so the next request does not replay the aborted half-object, and we
-  free the writers so the next AcquireJsonWriter starts from a clean
-  TJsonTextWriter internal state (array/object nesting counters). }
-procedure DiscardWriterState(const AStream: TStream; AMark: Int64);
-var
-  LLayout: TStreamWriterLayout;
+{ Zero the TStreamWriter's internal buffer so its destructor's Flush is a
+  no-op. Call this on any error path before freeing the TStreamWriter,
+  otherwise Destroy's automatic Flush would dump partial bytes into the
+  (just-rewound) stream. }
+procedure ClearStreamWriterBuffer(const AStreamWriter: TStreamWriter);
 begin
-  if AStream <> nil then
-  begin
-    AStream.Size := AMark;
-    AStream.Position := AMark;
-  end;
-  if GStreamWriter <> nil then
-  begin
-    LLayout := TStreamWriterLayout(GStreamWriter);
-    LLayout.FBufferIndex := 0;
-  end;
-  FreeAndNil(GJsonWriter);
-  FreeAndNil(GStreamWriter);
+  if AStreamWriter <> nil then
+    TStreamWriterLayout(AStreamWriter).FBufferIndex := 0;
 end;
 
 procedure EmitDataSetRows(const ADataSet: TDataSet; const AWriter: TJsonTextWriter;
@@ -1306,32 +1284,44 @@ class function TMVCStreamingJsonSerializer.TryWriteDataSet(
   const ANameCase: TMVCNameCase = ncUseDefault): Boolean;
 var
   LMark: Int64;
+  LStreamWriter: TStreamWriter;
   LJsonWriter: TJsonTextWriter;
   LBookmark: TBookmark;
+  LFlushed: Boolean;
 begin
   Result := False;
   if ADataSet = nil then Exit;
   EnsureInit;
   LMark := AStream.Position;
   LBookmark := ADataSet.BookMark;
-  LJsonWriter := AcquireJsonWriter(AStream);
+  LFlushed := False;
+  LJsonWriter := CreateJsonWriterPair(AStream, LStreamWriter);
   try
-    ADataSet.First;
-    LJsonWriter.WriteStartArray;
     try
-      EmitDataSetRows(ADataSet, LJsonWriter, ANameCase);
-    except
-      DiscardWriterState(AStream, LMark);
-      raise;
+      ADataSet.First;
+      LJsonWriter.WriteStartArray;
+      try
+        EmitDataSetRows(ADataSet, LJsonWriter, ANameCase);
+      except
+        AStream.Size := LMark;
+        AStream.Position := LMark;
+        raise;
+      end;
+      LJsonWriter.WriteEndArray;
+      LJsonWriter.Flush;
+      LStreamWriter.Flush;
+      LFlushed := True;
+      Result := True;
+    finally
+      if ADataSet.BookmarkValid(LBookmark) then
+        ADataSet.GotoBookmark(LBookmark);
+      ADataSet.FreeBookmark(LBookmark);
     end;
-    LJsonWriter.WriteEndArray;
-    LJsonWriter.Flush;
-    GStreamWriter.Flush;
-    Result := True;
   finally
-    if ADataSet.BookmarkValid(LBookmark) then
-      ADataSet.GotoBookmark(LBookmark);
-    ADataSet.FreeBookmark(LBookmark);
+    LJsonWriter.Free;
+    if not LFlushed then
+      ClearStreamWriterBuffer(LStreamWriter);
+    LStreamWriter.Free;
   end;
 end;
 
@@ -1339,8 +1329,10 @@ class function TMVCStreamingJsonSerializer.TryWriteObject(
   const AObject: TObject; const AStream: TStream): Boolean;
 var
   LPlan: TMVCStreamingPlan;
+  LStreamWriter: TStreamWriter;
   LJsonWriter: TJsonTextWriter;
   LMark: Int64;
+  LFlushed: Boolean;
 begin
   Result := False;
   if AObject = nil then Exit;
@@ -1348,18 +1340,30 @@ begin
   if not LPlan.Supported then Exit;
 
   LMark := AStream.Position;
+  LFlushed := False;
+  LJsonWriter := CreateJsonWriterPair(AStream, LStreamWriter);
   try
-    LJsonWriter := AcquireJsonWriter(AStream);
-    WriteObjectCore(AObject, LJsonWriter, LPlan);
-    LJsonWriter.Flush;
-    GStreamWriter.Flush;
-    Result := True;
-  except
-    on EMVCStreamingFallback do
-    begin
-      DiscardWriterState(AStream, LMark);
-      Result := False;
+    try
+      WriteObjectCore(AObject, LJsonWriter, LPlan);
+      LJsonWriter.Flush;
+      LStreamWriter.Flush;
+      LFlushed := True;
+      Result := True;
+    except
+      on EMVCStreamingFallback do
+      begin
+        AStream.Size := LMark;
+        AStream.Position := LMark;
+        // Result stays False; LFlushed stays False -> outer finally
+        // zeroes the buffer so Destroy's Flush won't replay the
+        // aborted half-object onto the rewound stream.
+      end;
     end;
+  finally
+    LJsonWriter.Free;
+    if not LFlushed then
+      ClearStreamWriterBuffer(LStreamWriter);
+    LStreamWriter.Free;
   end;
 end;
 
@@ -1373,8 +1377,10 @@ var
   LItem: TObject;
   LItemClass: TClass;
   LItemPlan: TMVCStreamingPlan;
+  LStreamWriter: TStreamWriter;
   LJsonWriter: TJsonTextWriter;
   LMark: Int64;
+  LFlushed: Boolean;
 begin
   Result := False;
   if AList = nil then Exit;
@@ -1400,38 +1406,48 @@ begin
   end;
 
   LMark := AStream.Position;
+  LFlushed := False;
+  LJsonWriter := CreateJsonWriterPair(AStream, LStreamWriter);
   try
-    LJsonWriter := AcquireJsonWriter(AStream);
-    LJsonWriter.WriteStartArray;
-    for I := 0 to LCount - 1 do
-    begin
-      LItem := LGetItem.Invoke(AList, [I]).AsObject;
-      if LItem = nil then
-        LJsonWriter.WriteNull
-      else
+    try
+      LJsonWriter.WriteStartArray;
+      for I := 0 to LCount - 1 do
       begin
-        if (I > 0) and (LItem.ClassType <> LItemClass) then
+        LItem := LGetItem.Invoke(AList, [I]).AsObject;
+        if LItem = nil then
+          LJsonWriter.WriteNull
+        else
         begin
-          LItemPlan := GetOrBuildPlan(LItem.ClassType);
-          if not LItemPlan.Supported then
-            raise EMVCStreamingFallback.CreateFmt(
-              'List item class %s is not supported by the streaming plan',
-              [LItem.ClassName]);
-          LItemClass := LItem.ClassType;
+          if (I > 0) and (LItem.ClassType <> LItemClass) then
+          begin
+            LItemPlan := GetOrBuildPlan(LItem.ClassType);
+            if not LItemPlan.Supported then
+              raise EMVCStreamingFallback.CreateFmt(
+                'List item class %s is not supported by the streaming plan',
+                [LItem.ClassName]);
+            LItemClass := LItem.ClassType;
+          end;
+          WriteObjectCore(LItem, LJsonWriter, LItemPlan);
         end;
-        WriteObjectCore(LItem, LJsonWriter, LItemPlan);
+      end;
+      LJsonWriter.WriteEndArray;
+      LJsonWriter.Flush;
+      LStreamWriter.Flush;
+      LFlushed := True;
+      Result := True;
+    except
+      on EMVCStreamingFallback do
+      begin
+        AStream.Size := LMark;
+        AStream.Position := LMark;
+        // Result/LFlushed stay False -> outer finally zeroes buffer.
       end;
     end;
-    LJsonWriter.WriteEndArray;
-    LJsonWriter.Flush;
-    GStreamWriter.Flush;
-    Result := True;
-  except
-    on EMVCStreamingFallback do
-    begin
-      DiscardWriterState(AStream, LMark);
-      Result := False;
-    end;
+  finally
+    LJsonWriter.Free;
+    if not LFlushed then
+      ClearStreamWriterBuffer(LStreamWriter);
+    LStreamWriter.Free;
   end;
 end;
 
@@ -1471,8 +1487,14 @@ initialization
 
 finalization
 {$IFDEF MVC_HAS_STREAMING_JSON}
-  GLock.Free;
+  // Authoritative cleanup. The class destructor of TMVCStreamingJsonSerializer
+  // also tries to release these (FreeAndNil-guarded), but a unit-level
+  // finalization is the only thing guaranteed to run regardless of how the
+  // linker treats the class.
+  FreeAndNil(GPlanCache);
+  FreeAndNil(GLock);
+  FreeAndNil(GUtf8NoBom);
+  FreeAndNil(GTypeSerializerProbe);
 {$ENDIF}
-
 
 end.
