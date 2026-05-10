@@ -33,6 +33,8 @@ uses
   MVCFramework.Tests.RESTClient in '..\RESTClient\MVCFramework.Tests.RESTClient.pas',
   MVCFramework.Tests.AppController in '..\RESTClient\MVCFramework.Tests.AppController.pas',
   TestDataSetCSVSerializer in 'TestDataSetCSVSerializer.pas',
+  MVCFramework.Serializer.CSV in '..\..\..\sources\MVCFramework.Serializer.CSV.pas',
+  TestObjectCSVSerializer in 'TestObjectCSVSerializer.pas',
   MVCFramework.BloomFilter in '..\..\..\sources\MVCFramework.BloomFilter.pas',
   RandomUtilsU in '..\..\..\samples\commons\RandomUtilsU.pas',
   DotEnvTestU in 'DotEnvTestU.pas';

@@ -47,8 +47,11 @@ interface
 
 uses
   System.SysUtils,
+  System.Rtti,
   MVCFramework,
-  MVCFramework.Commons;
+  MVCFramework.Commons,
+  MVCFramework.Serializer.Commons,
+  MVCFramework.Serializer.CSV;
 
 type
   /// <summary>
@@ -209,6 +212,81 @@ type
     /// goes out of scope.
     /// </summary>
     procedure Close;
+  end;
+
+  /// <summary>
+  /// CSV streaming writer. Emits a complete CSV document (text/csv)
+  /// one row at a time, directly to the socket.
+  ///
+  /// The header row is emitted on the first Send() call - column names
+  /// are inferred from the readable RTTI properties of the object's
+  /// runtime class (or from the class passed at construction). All
+  /// subsequent objects are formatted using the same column layout.
+  ///
+  /// Per-row state is just one TStringBuilder; server RAM stays flat
+  /// regardless of how many rows are emitted.
+  ///
+  /// Locale-independent: uses TFormatSettings.Invariant for all
+  /// numeric/date formatting. The Settings property exposes the same
+  /// knobs as TMVCCSVSerializer (delimiter, quote, line ending, etc).
+  ///
+  /// Usage:
+  ///   procedure TMyController.StreamPeople;
+  ///   var
+  ///     lW: TMVCCSVWriter;
+  ///   begin
+  ///     lW := TMVCCSVWriter.Create(Context);
+  ///     try
+  ///       while not ds.Eof do
+  ///       begin
+  ///         if not lW.Connected then Break;
+  ///         lW.Send(PersonFromQuery(ds));
+  ///         ds.Next;
+  ///       end;
+  ///     finally
+  ///       lW.Free;
+  ///     end;
+  ///   end;
+  ///
+  /// Like the other writers in this unit, this class requires an
+  /// Indy-based backend (Indy Direct or WebBroker on
+  /// TIdHTTPWebBrokerBridge).
+  /// </summary>
+  TMVCCSVWriter = class(TMVCStreamWriter)
+  private
+    FSerializer: TMVCCSVSerializer;
+    FColumns: TArray<TRttiProperty>;
+    FHeaderEmitted: Boolean;
+    FFixedClass: TClass;
+    FIgnoredAttributes: TMVCIgnoredList;
+    procedure EmitHeader;
+  public
+    constructor Create(const AContext: TWebContext;
+      const ACharset: string = 'utf-8'); overload;
+    constructor Create(const AContext: TWebContext;
+      const ASettings: TMVCCSVSerializerSettings;
+      const ACharset: string = 'utf-8'); overload;
+    constructor Create(const AContext: TWebContext;
+      const AClazz: TClass;
+      const ACharset: string = 'utf-8'); overload;
+    constructor Create(const AContext: TWebContext;
+      const AClazz: TClass;
+      const ASettings: TMVCCSVSerializerSettings;
+      const ACharset: string = 'utf-8'); overload;
+    destructor Destroy; override;
+
+    /// <summary>
+    /// Emits one row. On the first call the header is emitted first
+    /// (columns derived from AObject.ClassType, or from the TClass
+    /// passed at construction).
+    /// </summary>
+    procedure Send(const AObject: TObject);
+
+    /// <summary>
+    /// Properties to skip when building the column list. Must be set
+    /// BEFORE the first Send() call (header is built on first send).
+    /// </summary>
+    property IgnoredAttributes: TMVCIgnoredList read FIgnoredAttributes write FIgnoredAttributes;
   end;
 
 implementation
@@ -423,6 +501,73 @@ begin
   fClosed := True;
   if Connected then
     WriteRaw(']');
+end;
+
+{ TMVCCSVWriter }
+
+constructor TMVCCSVWriter.Create(const AContext: TWebContext;
+  const ACharset: string);
+begin
+  Create(AContext, nil, TMVCCSVSerializerSettings.Default, ACharset);
+end;
+
+constructor TMVCCSVWriter.Create(const AContext: TWebContext;
+  const ASettings: TMVCCSVSerializerSettings; const ACharset: string);
+begin
+  Create(AContext, nil, ASettings, ACharset);
+end;
+
+constructor TMVCCSVWriter.Create(const AContext: TWebContext;
+  const AClazz: TClass; const ACharset: string);
+begin
+  Create(AContext, AClazz, TMVCCSVSerializerSettings.Default, ACharset);
+end;
+
+constructor TMVCCSVWriter.Create(const AContext: TWebContext;
+  const AClazz: TClass; const ASettings: TMVCCSVSerializerSettings;
+  const ACharset: string);
+begin
+  inherited Create(AContext, TMVCMediaType.TEXT_CSV, ACharset);
+  FSerializer := TMVCCSVSerializer.Create(ASettings);
+  FFixedClass := AClazz;
+  FHeaderEmitted := False;
+end;
+
+destructor TMVCCSVWriter.Destroy;
+begin
+  FSerializer.Free;
+  inherited;
+end;
+
+procedure TMVCCSVWriter.EmitHeader;
+begin
+  if FHeaderEmitted then
+    Exit;
+  FHeaderEmitted := True;
+  if FSerializer.Settings.HasHeader and (Length(FColumns) > 0) then
+    WriteRaw(FSerializer.BuildHeaderLine(FColumns) + FSerializer.Settings.LineEnding);
+end;
+
+procedure TMVCCSVWriter.Send(const AObject: TObject);
+var
+  lClazz: TClass;
+begin
+  if not Connected then
+    Exit;
+  if AObject = nil then
+    raise EMVCCSVSerializerException.Create('AObject is nil');
+
+  if not FHeaderEmitted then
+  begin
+    if Assigned(FFixedClass) then
+      lClazz := FFixedClass
+    else
+      lClazz := AObject.ClassType;
+    FColumns := FSerializer.BuildColumns(lClazz, FIgnoredAttributes);
+    EmitHeader;
+  end;
+
+  WriteRaw(FSerializer.BuildDataLine(AObject, FColumns) + FSerializer.Settings.LineEnding);
 end;
 
 end.

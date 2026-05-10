@@ -109,6 +109,7 @@ contains
   MVCFramework.Swagger.Commons in '..\..\sources\MVCFramework.Swagger.Commons.pas',
   MVCFramework.Nullables in '..\..\sources\MVCFramework.Nullables.pas',
   MVCFramework.Serializer.HTML in '..\..\sources\MVCFramework.Serializer.HTML.pas',
+  MVCFramework.Serializer.CSV in '..\..\sources\MVCFramework.Serializer.CSV.pas',
   MVCFramework.LRUCache in '..\..\sources\MVCFramework.LRUCache.pas',
   MVCFramework.RESTClient.Commons in '..\..\sources\MVCFramework.RESTClient.Commons.pas',
   MVCFramework.RESTClient.Indy in '..\..\sources\MVCFramework.RESTClient.Indy.pas',

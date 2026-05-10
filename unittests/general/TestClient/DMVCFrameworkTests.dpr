@@ -81,6 +81,8 @@ uses
   InjectorTestU in 'InjectorTestU.pas',
   MVCFramework.Container in '..\..\..\sources\MVCFramework.Container.pas',
   TestDataSetCSVSerializer in 'TestDataSetCSVSerializer.pas',
+  MVCFramework.Serializer.CSV in '..\..\..\sources\MVCFramework.Serializer.CSV.pas',
+  TestObjectCSVSerializer in 'TestObjectCSVSerializer.pas',
   MVCFramework.BloomFilter in '..\..\..\sources\MVCFramework.BloomFilter.pas',
   TestsBloomFilterU in 'TestsBloomFilterU.pas',
   DotEnvTestU in 'DotEnvTestU.pas',

@@ -157,6 +157,8 @@
         <DCCReference Include="..\RESTClient\MVCFramework.Tests.RESTClient.pas"/>
         <DCCReference Include="..\RESTClient\MVCFramework.Tests.AppController.pas"/>
         <DCCReference Include="TestDataSetCSVSerializer.pas"/>
+        <DCCReference Include="..\..\..\sources\MVCFramework.Serializer.CSV.pas"/>
+        <DCCReference Include="TestObjectCSVSerializer.pas"/>
         <DCCReference Include="..\..\..\sources\MVCFramework.BloomFilter.pas"/>
         <DCCReference Include="..\..\..\samples\commons\RandomUtilsU.pas"/>
         <DCCReference Include="DotEnvTestU.pas"/>
