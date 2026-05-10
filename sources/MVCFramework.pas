@@ -547,7 +547,7 @@ type
     property StreamingHandled: Boolean read FStreamingHandled write FStreamingHandled;
   end;
 
-  TUser = class
+  TMVCUser = class
   private
     FUserName: string;
     FRoles: TList<string>;
@@ -583,7 +583,7 @@ type
     fSerializers: TDictionary<string, IMVCSerializer>;
     fIsSessionStarted: Boolean;
     fSessionMustBeClose: Boolean;
-    fLoggedUser: TUser;
+    fLoggedUser: TMVCUser;
     fWebSession: TMVCWebSession;
     fData: TMVCStringDictionary;
     fIntfObject: IInterface;
@@ -591,7 +591,7 @@ type
     fSessionFactory: TMVCWebSessionFactory;
     function GetSessionFactory: TMVCWebSessionFactory; inline;
     function GetWebSession: TMVCWebSession;
-    function GetLoggedUser: TUser;
+    function GetLoggedUser: TMVCUser;
     function GetParamsTable: TMVCRequestParamsTable;
     procedure SetParamsTable(const AValue: TMVCRequestParamsTable);
     function GetHostingFrameworkType: TMVCHostingFrameworkType;
@@ -621,7 +621,7 @@ type
     function SessionMustBeClose: Boolean;
 
     property HostingFrameworkType: TMVCHostingFrameworkType read GetHostingFrameworkType;
-    property LoggedUser: TUser read GetLoggedUser;
+    property LoggedUser: TMVCUser read GetLoggedUser;
     property LoggedUserExists: Boolean read GetLoggedUserExists;
     property Request: TMVCWebRequest read FRequest;
     property Response: TMVCWebResponse read FResponse;
@@ -1919,9 +1919,9 @@ begin
   inherited Destroy;
 end;
 
-{ TUser }
+{ TMVCUser }
 
-procedure TUser.Clear;
+procedure TMVCUser.Clear;
 begin
   FUserName := EmptyStr;
   FLoggedSince := 0;
@@ -1929,26 +1929,26 @@ begin
   FRoles.Clear;
 end;
 
-constructor TUser.Create;
+constructor TMVCUser.Create;
 begin
   inherited Create;
   FRoles := TList<string>.Create;
   FCustomData := nil;
 end;
 
-destructor TUser.Destroy;
+destructor TMVCUser.Destroy;
 begin
   FRoles.Free;
   FreeAndNil(FCustomData);
   inherited Destroy;
 end;
 
-function TUser.GetIsValid: Boolean;
+function TMVCUser.GetIsValid: Boolean;
 begin
   Result := (not UserName.IsEmpty) and (LoggedSince > 0);
 end;
 
-function TUser.LoadFromSession(const AWebSession: TMVCWebSession): Boolean;
+function TMVCUser.LoadFromSession(const AWebSession: TMVCWebSession): Boolean;
 var
   SerObj: string;
   Pieces: TArray<string>;
@@ -1974,7 +1974,7 @@ begin
   end;
 end;
 
-procedure TUser.SaveToSession(const AWebSession: TMVCWebSession);
+procedure TMVCUser.SaveToSession(const AWebSession: TMVCWebSession);
 var
   LRoles: string;
 begin
@@ -1986,17 +1986,17 @@ begin
     DateTimeToISOTimeStamp(FLoggedSince) + '$$' + FRealm + '$$' + LRoles;
 end;
 
-procedure TUser.SetCustomData(const Value: TMVCCustomData);
+procedure TMVCUser.SetCustomData(const Value: TMVCCustomData);
 begin
   FCustomData := Value;
 end;
 
-procedure TUser.SetLoggedSince(const AValue: TDateTime);
+procedure TMVCUser.SetLoggedSince(const AValue: TDateTime);
 begin
   if (FLoggedSince = 0) then
     FLoggedSince := AValue
   else
-    raise EMVCException.Create('TUser.LoggedSince already set.');
+    raise EMVCException.Create('TMVCUser.LoggedSince already set.');
 end;
 
 { TWebContext }
@@ -2157,11 +2157,11 @@ begin
   FMessage := AMessage;
 end;
 
-function TWebContext.GetLoggedUser: TUser;
+function TWebContext.GetLoggedUser: TMVCUser;
 begin
   if not Assigned(FLoggedUser) then
   begin
-    fLoggedUser := TUser.Create;
+    fLoggedUser := TMVCUser.Create;
     if SessionStarted then
     begin
       fLoggedUser.LoadFromSession(GetWebSession);

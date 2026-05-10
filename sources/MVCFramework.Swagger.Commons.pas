@@ -1190,6 +1190,9 @@ class function TMVCSwagger.TypeKindToMVCSwagSchemaType(aPropType: TRttiType): TM
 begin
   Result := stUnknown;
 
+  if not Assigned(aPropType) then
+    Exit;
+
   if aPropType.TypeKind = tkUnknown then
     Exit;
 
