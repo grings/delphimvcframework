@@ -3,6 +3,7 @@ unit UploadDTOU;
 interface
 
 uses
+  MVCFramework.Validators,
   MVCFramework.Serializer.Commons,
   DataURLTypeU;
 
@@ -13,7 +14,10 @@ type
     FFileDataURL: TDataURL;
   public
     [MVCNameAs('name')]
+    [MVCRequired]
+    [MVCNotEmpty]
     property Name: string read FName write FName;
+    [MVCRequired]
     [MVCNameAs('file')]
     property FileDataURL: TDataURL read FFileDataURL write FFileDataURL;
   end;

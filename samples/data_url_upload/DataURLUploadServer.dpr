@@ -9,6 +9,7 @@ uses
   MVCFramework.Signal,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
+  MVCFramework.Logger,
   MVCFramework.Middleware.StaticFiles,
   DataURLTypeU in 'DataURLTypeU.pas',
   UploadDTOU in 'UploadDTOU.pas',
@@ -24,8 +25,7 @@ var
   LEngine: TMVCEngine;
   LServer: IMVCServer;
 begin
-  WriteLn('** DMVCFramework Data URL Upload Sample **');
-  WriteLn;
+  LogI('** DMVCFramework Data URL Upload Sample **');
 
   LEngine := TMVCEngine.Create(
     procedure(Config: TMVCConfig)
@@ -45,19 +45,15 @@ begin
     LServer := TMVCServerFactory.CreateIndyDirect(LEngine);
     LServer.Listen(PORT);
     try
-      WriteLn('Server started on port ', PORT, ' (Indy Direct)');
-      WriteLn;
-      WriteLn('Open your browser at:');
-      WriteLn;
-      WriteLn('  ==> http://localhost:', PORT, '/static/index.html');
-      WriteLn;
-      WriteLn('Drop a file on the page to POST it as a JSON-embedded data URL.');
-      WriteLn('The server decodes it via TDataURL custom type serializer and');
-      WriteLn('saves the bytes under the "uploaded" folder next to the executable.');
-      WriteLn;
-      WriteLn('Press Ctrl+C to stop.');
+      LogI('Server started on port ' + PORT.ToString + ' (Indy Direct)');
+      LogI('Open your browser at:');
+      LogI('  ==> http://localhost:' + PORT.ToString + '/static/index.html');
+      LogI('Drop a file on the page to POST it as a JSON-embedded data URL.');
+      LogI('The server decodes it via TDataURL custom type serializer and');
+      LogI('saves the bytes under the "uploaded" folder next to the executable.');
+      LogI('Press Ctrl+C to stop.');
       WaitForTerminationSignal;
-      WriteLn('Shutting down...');
+      LogI('Shutting down...');
     finally
       LServer.Stop;
       LServer := nil;
@@ -74,6 +70,6 @@ begin
     RunServer;
   except
     on E: Exception do
-      WriteLn(E.ClassName, ': ', E.Message);
+      LogE(E.ClassName + ': ' + E.Message);
   end;
 end.
