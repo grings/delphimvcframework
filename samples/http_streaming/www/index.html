@@ -21,6 +21,8 @@
     --accent-progress-dim: rgba(167,139,250,0.12);
     --accent-jsonl: #34d399;
     --accent-jsonl-dim: rgba(52,211,153,0.12);
+    --accent-csv: #f59e0b;
+    --accent-csv-dim: rgba(245,158,11,0.12);
     --mono: 'JetBrains Mono', monospace;
     --sans: 'Space Grotesk', system-ui, sans-serif;
   }
@@ -141,6 +143,7 @@
   .card.sse-chat .protocol { color: var(--accent-sse); background: var(--accent-sse-dim); }
   .card.sse-progress .protocol { color: var(--accent-progress); background: var(--accent-progress-dim); }
   .card.jsonl .protocol { color: var(--accent-jsonl); background: var(--accent-jsonl-dim); }
+  .card.csv .protocol { color: var(--accent-csv); background: var(--accent-csv-dim); }
 
   .card-header h2 {
     font-size: 18px;
@@ -198,6 +201,15 @@
   .btn-jsonl:hover:not(:disabled) {
     background: var(--accent-jsonl-dim);
     border-color: var(--accent-jsonl);
+  }
+
+  .btn-csv {
+    color: var(--accent-csv);
+    border-color: rgba(245,158,11,0.3);
+  }
+  .btn-csv:hover:not(:disabled) {
+    background: var(--accent-csv-dim);
+    border-color: var(--accent-csv);
   }
 
   /* Status indicator */
@@ -397,8 +409,9 @@
     <div class="tag">DMVCFramework</div>
     <h1>Streaming Lab</h1>
     <p>
-      Three streaming patterns: <code>SSE</code> for real-time events and
-      <code>JSONL</code> for newline-delimited data. No WebSocket, no polling &mdash; just HTTP.
+      Four streaming patterns: <code>SSE</code> for real-time events,
+      <code>JSONL</code> for newline-delimited JSON, and <code>CSV</code>
+      for tabular text. No WebSocket, no polling &mdash; just HTTP.
     </p>
   </header>
 
@@ -463,6 +476,32 @@
       </table>
     </div>
     <div class="table-footer" id="peopleFooter" style="display:none;"></div>
+  </div>
+
+  <!-- CSV People -->
+  <div class="card csv">
+    <div class="card-header">
+      <div class="left">
+        <span class="protocol">CSV</span>
+        <h2>People CSV</h2>
+      </div>
+      <span class="endpoint">GET /api/people-csv</span>
+    </div>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; gap:10px; flex-wrap:wrap;">
+      <div style="display:flex; gap:10px;">
+        <button class="btn btn-csv" id="btnCSV" onclick="startCSV()">Stream CSV</button>
+        <a class="btn btn-csv" id="btnCSVDownload" href="/api/people-csv" download="people.csv"
+          style="text-decoration:none; display:inline-flex; align-items:center;">Download .csv</a>
+      </div>
+      <div class="status" id="csvStatus"><span class="dot"></span> <span>idle</span></div>
+    </div>
+    <div class="table-container" id="csvTable" style="display:none;">
+      <table>
+        <thead id="csvThead"></thead>
+        <tbody id="csvBody"></tbody>
+      </table>
+    </div>
+    <div class="table-footer" id="csvFooter" style="display:none;"></div>
   </div>
 </div>
 
@@ -623,6 +662,115 @@ async function startPeople() {
   } catch(e) {
     footer.textContent = 'Error: ' + e.message;
     setStatus('peopleStatus', '', 'error');
+  }
+
+  btn.disabled = false;
+}
+
+// ── CSV People Stream ──
+
+function parseCSVLine(line, delimiter) {
+  delimiter = delimiter || ',';
+  var result = [];
+  var i = 0, len = line.length;
+  var inQuoted = false;
+  var sb = '';
+  while (i < len) {
+    var ch = line.charAt(i);
+    if (inQuoted) {
+      if (ch === '"') {
+        if (i + 1 < len && line.charAt(i + 1) === '"') {
+          sb += '"';
+          i += 2;
+        } else {
+          inQuoted = false;
+          i++;
+        }
+      } else {
+        sb += ch;
+        i++;
+      }
+    } else if (ch === '"') {
+      inQuoted = true;
+      i++;
+    } else if (ch === delimiter) {
+      result.push(sb);
+      sb = '';
+      i++;
+    } else {
+      sb += ch;
+      i++;
+    }
+  }
+  result.push(sb);
+  return result;
+}
+
+async function startCSV() {
+  var btn = document.getElementById('btnCSV');
+  var thead = document.getElementById('csvThead');
+  var tbody = document.getElementById('csvBody');
+  var table = document.getElementById('csvTable');
+  var footer = document.getElementById('csvFooter');
+  btn.disabled = true;
+  thead.innerHTML = '';
+  tbody.innerHTML = '';
+  table.style.display = '';
+  footer.style.display = '';
+  footer.textContent = 'Receiving...';
+  setStatus('csvStatus', 'active', 'streaming');
+
+  try {
+    var response = await fetch('/api/people-csv');
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var headers = null;
+    var count = 0;
+
+    function emitRow(line) {
+      if (!line) return;
+      var fields = parseCSVLine(line, ',');
+      if (!headers) {
+        headers = fields;
+        var tr = document.createElement('tr');
+        for (var j = 0; j < headers.length; j++) {
+          var th = document.createElement('th');
+          th.textContent = headers[j];
+          tr.appendChild(th);
+        }
+        thead.appendChild(tr);
+        return;
+      }
+      count++;
+      var rowTr = document.createElement('tr');
+      for (var j = 0; j < fields.length; j++) {
+        var td = document.createElement('td');
+        td.textContent = fields[j];
+        rowTr.appendChild(td);
+      }
+      tbody.appendChild(rowTr);
+      footer.textContent = count + ' rows received';
+      table.scrollTop = table.scrollHeight;
+    }
+
+    while (true) {
+      var result = await reader.read();
+      if (result.done) break;
+      buffer += decoder.decode(result.value, { stream: true });
+      var lines = buffer.split('\n');
+      buffer = lines.pop();
+      for (var i = 0; i < lines.length; i++) {
+        emitRow(lines[i].replace(/\r$/, ''));
+      }
+    }
+    if (buffer.trim()) emitRow(buffer.trim());
+
+    footer.textContent = count + ' rows received — stream complete';
+    setStatus('csvStatus', 'done', count + ' rows');
+  } catch (e) {
+    footer.textContent = 'Error: ' + e.message;
+    setStatus('csvStatus', '', 'error');
   }
 
   btn.disabled = false;

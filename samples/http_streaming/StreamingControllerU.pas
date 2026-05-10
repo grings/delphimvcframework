@@ -6,6 +6,19 @@ uses
   MVCFramework, MVCFramework.Commons;
 
 type
+  TPerson = class
+  private
+    FId: Integer;
+    FFirstName: string;
+    FLastName: string;
+    FAge: Integer;
+  public
+    property Id: Integer read FId write FId;
+    property FirstName: string read FFirstName write FFirstName;
+    property LastName: string read FLastName write FLastName;
+    property Age: Integer read FAge write FAge;
+  end;
+
   [MVCPath('/api')]
   TStreamingController = class(TMVCController)
   public
@@ -35,12 +48,23 @@ type
     [MVCHTTPMethod([httpGET])]
     [MVCProduces('application/x-ndjson')]
     procedure PeopleStream;
+
+    /// <summary>
+    /// CSV: Streams the same dataset as text/csv. Header is emitted on
+    /// first Send; columns derived from TPerson RTTI properties.
+    /// </summary>
+    [MVCPath('/people-csv')]
+    [MVCHTTPMethod([httpGET])]
+    [MVCProduces('text/csv')]
+    procedure PeopleCSVStream;
   end;
 
 implementation
 
 uses
-  System.SysUtils, System.DateUtils, MVCFramework.SSE.Writer;
+  System.SysUtils, System.DateUtils,
+  MVCFramework.SSE.Writer,
+  MVCFramework.Serializer.CSV;
 
 procedure TStreamingController.ChatStream;
 const
@@ -116,6 +140,43 @@ begin
     end;
   finally
     lJSONL.Free;
+  end;
+end;
+
+procedure TStreamingController.PeopleCSVStream;
+const
+  FIRST_NAMES: array[0..9] of string = (
+    'Peter', 'Bruce', 'Reed', 'Tony', 'Natasha',
+    'Steve', 'Wanda', 'Scott', 'Carol', 'Clint');
+  LAST_NAMES: array[0..9] of string = (
+    'Parker', 'Banner', 'Richards', 'Stark', 'Romanoff',
+    'Rogers', 'Maximoff', 'Lang', 'Danvers', 'Barton');
+var
+  lW: TMVCCSVWriter;
+  lPerson: TPerson;
+  I: Integer;
+begin
+  lW := TMVCCSVWriter.Create(Context, TPerson);
+  try
+    for I := 1 to 100 do
+    begin
+      if not lW.Connected then
+        Break;
+      lPerson := TPerson.Create;
+      try
+        lPerson.Id := I;
+        lPerson.FirstName := FIRST_NAMES[Random(10)];
+        lPerson.LastName := LAST_NAMES[Random(10)];
+        lPerson.Age := 20 + Random(50);
+        lW.Send(lPerson);
+      finally
+        lPerson.Free;
+      end;
+      if I mod 10 = 0 then
+        Sleep(100);
+    end;
+  finally
+    lW.Free;
   end;
 end;
 
