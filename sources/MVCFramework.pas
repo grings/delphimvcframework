@@ -2665,6 +2665,9 @@ var
   lValidationError: TPair<string, string>;
   lLocalTable: TMVCRouteTable;
   lMatched: Boolean;
+  lRoutingPath: string;
+  lRawPath: string;
+  lDecodedPath: string;
 begin
   Result := False;
   DefineDefaultResponseHeaders(AContext);
@@ -2677,8 +2680,22 @@ begin
       if not lHandled then
       begin
         lLocalTable := TMVCRouteTable(fRouteTable);
+        { Issue #826: under ISAPI with a non-wildcard handler mapping,
+          IIS strips the mapping prefix from RawPathInfo (or empties it
+          entirely), which breaks routing. PathInfo always carries the
+          full decoded path, so we fall back to it whenever RawPathInfo
+          is empty or shorter than PathInfo (the strip signal). On all
+          other adapters (Indy, WebBroker, HTTP.sys, Apache) the two
+          values are equivalent except for percent-encoding, so the
+          raw form is preferred to keep '%2F' inside path parameters. }
+        lRawPath := AContext.Request.RawPathInfo;
+        lDecodedPath := AContext.Request.PathInfo;
+        if (lRawPath = '') or (Length(lRawPath) < Length(lDecodedPath)) then
+          lRoutingPath := lDecodedPath
+        else
+          lRoutingPath := lRawPath;
         lMatched := TMVCRouter.ExecuteRouting(
-          AContext.Request.RawPathInfo,
+          lRoutingPath,
           AContext.Request.GetOverwrittenHTTPMethod,
           AContext.Request.ContentType,
           AContext.Request.Accept,

@@ -1955,7 +1955,7 @@ begin
   try
     Assert.IsNotNull(lE, 'EMVCStorageValidationException must be raised');
     Assert.IsNotNull(lE.ValidationErrors, 'ValidationErrors dict must not be nil');
-    Assert.AreEqual(2, lE.ValidationErrors.Count,
+    Assert.AreEqual<Integer>(2, lE.ValidationErrors.Count,
       'Both name (required) and email (format) errors must be collected in one pass');
     Assert.IsTrue(lE.ValidationErrors.ContainsKey('Name'),
       'ValidationErrors must include the Name field');
@@ -1972,7 +1972,7 @@ var
 begin
   InsertValid(lID);
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var
       lP: TValidatedProduct;
     begin
@@ -1983,7 +1983,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException,
     'Validation must run on Update, not only on Insert');
 end;
@@ -2216,7 +2216,7 @@ end;
 procedure TTestValidationExtras.TestMinLengthRaisesWhenBelow;
 begin
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var lP: TValidatedExtras;
     begin
       lP := NewValidExtras;
@@ -2226,7 +2226,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
@@ -2247,7 +2247,7 @@ end;
 procedure TTestValidationExtras.TestExactLengthRaisesWhenTooShort;
 begin
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var lP: TValidatedExtras;
     begin
       lP := NewValidExtras;
@@ -2257,14 +2257,14 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
 procedure TTestValidationExtras.TestExactLengthRaisesWhenTooLong;
 begin
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var lP: TValidatedExtras;
     begin
       lP := NewValidExtras;
@@ -2274,7 +2274,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
@@ -2295,7 +2295,7 @@ end;
 procedure TTestValidationExtras.TestNotEmptyRaisesOnWhitespace;
 begin
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var lP: TValidatedExtras;
     begin
       lP := NewValidExtras;
@@ -2305,7 +2305,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
@@ -2326,7 +2326,7 @@ end;
 procedure TTestValidationExtras.TestPatternRaisesOnNonMatch;
 begin
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var lP: TValidatedExtras;
     begin
       lP := NewValidExtras;
@@ -2336,7 +2336,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
@@ -2357,7 +2357,7 @@ end;
 procedure TTestValidationExtras.TestInRaisesOnNotInList;
 begin
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     var lP: TValidatedExtras;
     begin
       lP := NewValidExtras;
@@ -2367,7 +2367,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
@@ -2420,7 +2420,7 @@ var
 begin
   // Not assigning NullableReq leaves HasValue = False — MVCRequired must reject.
   Assert.WillRaise(
-    procedure
+    TTestLocalMethod(procedure
     begin
       lP := TValidatedExtras.Create;
       try
@@ -2435,7 +2435,7 @@ begin
       finally
         lP.Free;
       end;
-    end,
+    end),
     EMVCStorageValidationException);
 end;
 
@@ -2492,7 +2492,7 @@ begin
   end;
   try
     Assert.IsNotNull(lE);
-    Assert.AreEqual(2, lE.ValidationErrors.Count,
+    Assert.AreEqual<Integer>(2, lE.ValidationErrors.Count,
       'Attribute and OnStorageValidate errors must be aggregated in one pass');
     Assert.IsTrue(lE.ValidationErrors.ContainsKey('Name'));
     Assert.IsTrue(lE.ValidationErrors.ContainsKey('Flag'));
@@ -2525,7 +2525,7 @@ begin
   try
     Assert.IsNotNull(lE,
       'OnStorageValidate must trigger EMVCStorageValidationException even when no attribute fired');
-    Assert.AreEqual(1, lE.ValidationErrors.Count);
+    Assert.AreEqual<Integer>(1, lE.ValidationErrors.Count);
     Assert.IsTrue(lE.ValidationErrors.ContainsKey('Flag'));
   finally
     lE.Free;
