@@ -2508,6 +2508,10 @@ begin
       begin
         FDConnectionConfigU.CreateMSSQLServerPrivateConnDef(True);
       end;
+    TRDBMSEngine.Oracle:
+      begin
+        FDConnectionConfigU.CreateOraclePrivateConnDef(True);
+      end;
   else
     raise Exception.Create('Unknown RDBMS');
   end;

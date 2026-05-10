@@ -11,10 +11,12 @@ procedure CreateMySQLPrivateConnDef(AIsPooled: boolean);
 procedure CreateMSSQLServerPrivateConnDef(AIsPooled: boolean);
 procedure CreatePostgresqlPrivateConnDef(AIsPooled: boolean);
 procedure CreateSqlitePrivateConnDef(AIsPooled: boolean);
+procedure CreateOraclePrivateConnDef(AIsPooled: boolean);
 
 implementation
 
 uses
+  System.SysUtils,
   System.Classes,
   System.IOUtils,
   FireDAC.Comp.Client,
@@ -108,6 +110,12 @@ begin
     LParams.Free;
   end;
 end;
+
+procedure CreateOraclePrivateConnDef(AIsPooled: boolean);
+begin
+  raise Exception.Create('Demo still not implemented for Oracle');
+end;
+
 
 procedure CreateFirebirdPrivateConnDef(AIsPooled: boolean);
 var
