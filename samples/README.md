@@ -224,6 +224,7 @@ Each folder contains a self-contained sample project. Build with Delphi 10.1+ an
 | `ado` | ADO database integration |
 | `rql2sql` | Interactive RQL-to-SQL converter (Firebird, PostgreSQL, MySQL, MSSQL, SQLite, Oracle) |
 | `file_upload` | File upload handling |
+| `data_url_upload` | Browser-to-server file upload via JSON-embedded data URLs (RFC 2397). Shows `IMVCTypeSerializer` end-to-end with a `TDataURL` custom type. |
 
 ## Full Demo Applications
 
