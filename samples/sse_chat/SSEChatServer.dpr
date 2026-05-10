@@ -8,14 +8,13 @@ uses
   MVCFramework.Signal,
   MVCFramework.Logger,
   MVCFramework.Commons,
-{$IFDEF MSWINDOWS}
+  {$IFDEF MSWINDOWS}
   Winapi.Windows,
-{$ENDIF}
+  {$ENDIF }
   ReqMulti,
   Web.WebReq,
   Web.WebBroker,
   IdHTTPWebBrokerBridge,
-  MVCFramework.SSE in '..\..\sources\MVCFramework.SSE.pas',
   ChatSSEControllerU in 'ChatSSEControllerU.pas',
   ChatApiControllerU in 'ChatApiControllerU.pas',
   ChatRoomU in 'ChatRoomU.pas',

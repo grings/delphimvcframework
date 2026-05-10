@@ -127,7 +127,6 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="..\..\sources\MVCFramework.SSE.pas"/>
         <DCCReference Include="ChatSSEControllerU.pas"/>
         <DCCReference Include="ChatApiControllerU.pas"/>
         <DCCReference Include="ChatRoomU.pas"/>
@@ -161,7 +160,7 @@
                 </Excluded_Packages>
             </Delphi.Personality>
             <Deployment Version="5">
-                <DeployFile LocalName="SSEChatServer.exe" Configuration="Debug" Class="ProjectOutput">
+                <DeployFile LocalName="bin\SSEChatServer.exe" Configuration="Debug" Class="ProjectOutput">
                     <Platform Name="Win32">
                         <RemoteName>SSEChatServer.exe</RemoteName>
                         <Overwrite>true</Overwrite>
