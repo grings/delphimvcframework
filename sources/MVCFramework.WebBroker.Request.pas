@@ -41,6 +41,9 @@ type
   TMVCWebBrokerRequest = class(TMVCWebRequest)
   private
     FWebRequest: TWebRequest;
+    FMultipartFallback: TStringList;
+    FMultipartFallbackTried: Boolean;
+    procedure EnsureMultipartFallback;
   protected
     function GetHeader(const AName: string): string; override;
     function GetPathInfo: string; override;
@@ -75,6 +78,7 @@ type
   public
     constructor Create(const AWebRequest: TWebRequest;
       const ASerializers: TDictionary<string, IMVCSerializer>);
+    destructor Destroy; override;
     function ClientIp: string; override;
     function ClientPreferredLanguage: String; override;
     function QueryString: string; override;
@@ -100,8 +104,105 @@ constructor TMVCWebBrokerRequest.Create(const AWebRequest: TWebRequest;
   const ASerializers: TDictionary<string, IMVCSerializer>);
 begin
   FWebRequest := AWebRequest;
+  FMultipartFallback := nil;
+  FMultipartFallbackTried := False;
   inherited Create(ASerializers);
   DefineContentType;
+end;
+
+destructor TMVCWebBrokerRequest.Destroy;
+begin
+  FMultipartFallback.Free;
+  inherited;
+end;
+
+procedure TMVCWebBrokerRequest.EnsureMultipartFallback;
+//
+// Strategy: WebBroker delegates request parsing to its host (Indy bridge,
+// Apache, ISAPI). The host normally populates TWebRequest.ContentFields with
+// every multipart text field. Some host versions — notably older Indy bridges
+// when the part carries Content-Transfer-Encoding: 8bit (issue #758) — skip
+// those fields, leaving ContentFields empty for multipart bodies.
+//
+// To avoid breaking installations that depend on the *current* behaviour
+// (which works correctly on Delphi 13 + current Indy), this fallback runs
+// only when the host produced zero ContentFields for a multipart request.
+// In that narrow scenario we parse the raw body ourselves and stash the
+// text-only parts in FMultipartFallback. The accessors merge that view on
+// top of whatever the host already produced; it never overrides values that
+// the host parsed correctly.
+//
+// Tried at most once per request (FMultipartFallbackTried) to keep the cost
+// at zero on the happy path.
+var
+  lContentType, lBoundary, lRawStr, lPart, lHeaderSection, lBodySection: string;
+  lParts: TArray<string>;
+  I, lBoundaryPos, lSplitPos, lFnPos, lNamePos: Integer;
+  lFieldName, lFileName: string;
+  lRawBytes: TBytes;
+begin
+  if FMultipartFallbackTried then
+    Exit;
+  FMultipartFallbackTried := True;
+
+  lContentType := string(FWebRequest.ContentType);
+  if not lContentType.ToLower.Contains('multipart/form-data') then
+    Exit;
+  // Skip fallback when the host already parsed text fields — avoids any risk
+  // of double-counting and keeps the well-known happy path untouched.
+  if FWebRequest.ContentFields.Count > 0 then
+    Exit;
+
+  lBoundary := '';
+  lBoundaryPos := Pos('boundary=', LowerCase(lContentType));
+  if lBoundaryPos > 0 then
+  begin
+    lBoundary := Copy(lContentType, lBoundaryPos + 9, MaxInt);
+    if (Length(lBoundary) > 0) and (lBoundary[1] = '"') then
+      lBoundary := AnsiDequotedStr(lBoundary, '"');
+  end;
+  if lBoundary = '' then
+    Exit;
+
+  lRawBytes := DoGetRawContent;
+  if Length(lRawBytes) = 0 then
+    Exit;
+  lRawStr := TEncoding.UTF8.GetString(lRawBytes);
+
+  FMultipartFallback := TStringList.Create;
+  lParts := lRawStr.Split(['--' + lBoundary]);
+  for I := 1 to Length(lParts) - 1 do
+  begin
+    lPart := lParts[I];
+    if lPart.StartsWith('--') then
+      Continue;
+    lSplitPos := Pos(#13#10#13#10, lPart);
+    if lSplitPos = 0 then
+      Continue;
+    lHeaderSection := Trim(Copy(lPart, 1, lSplitPos - 1));
+    lBodySection := Copy(lPart, lSplitPos + 4, MaxInt);
+    if lBodySection.StartsWith(#13#10) then
+      lBodySection := Copy(lBodySection, 3, MaxInt);
+    if lBodySection.EndsWith(#13#10) then
+      lBodySection := Copy(lBodySection, 1, Length(lBodySection) - 2);
+
+    lFileName := '';
+    lFieldName := '';
+    lFnPos := Pos('filename="', lHeaderSection);
+    if lFnPos > 0 then
+    begin
+      lFileName := Copy(lHeaderSection, lFnPos + 10, MaxInt);
+      lFileName := Copy(lFileName, 1, Pos('"', lFileName) - 1);
+    end;
+    lNamePos := Pos('name="', lHeaderSection);
+    if lNamePos > 0 then
+    begin
+      lFieldName := Copy(lHeaderSection, lNamePos + 6, MaxInt);
+      lFieldName := Copy(lFieldName, 1, Pos('"', lFieldName) - 1);
+    end;
+    if (lFileName = '') and (lFieldName <> '') then
+      FMultipartFallback.Values[lFieldName] := lBodySection;
+  end;
 end;
 
 function TMVCWebBrokerRequest.Accept: string;
@@ -145,6 +246,12 @@ end;
 function TMVCWebBrokerRequest.ContentParam(const AName: string): string;
 begin
   Result := FWebRequest.ContentFields.Values[AName];
+  if Result = '' then
+  begin
+    EnsureMultipartFallback;
+    if Assigned(FMultipartFallback) then
+      Result := FMultipartFallback.Values[AName];
+  end;
 end;
 
 function TMVCWebBrokerRequest.Cookie(const AName: string): string;
@@ -158,7 +265,23 @@ begin
 end;
 
 function TMVCWebBrokerRequest.DoGetContentFieldsText: TStrings;
+var
+  I: Integer;
 begin
+  // When the host already populated ContentFields, return it as-is to
+  // preserve original casing/order.
+  if FWebRequest.ContentFields.Count > 0 then
+    Exit(FWebRequest.ContentFields);
+  // Otherwise (multipart with parts skipped by old Indy bridge — #758),
+  // surface the manually-parsed text fields so callers iterating over
+  // ContentFieldsText still see them.
+  EnsureMultipartFallback;
+  if Assigned(FMultipartFallback) and (FMultipartFallback.Count > 0) then
+  begin
+    for I := 0 to FMultipartFallback.Count - 1 do
+      if FWebRequest.ContentFields.IndexOf(FMultipartFallback[I]) < 0 then
+        FWebRequest.ContentFields.Add(FMultipartFallback[I]);
+  end;
   Result := FWebRequest.ContentFields;
 end;
 
@@ -197,11 +320,19 @@ begin
   if not Assigned(FContentFields) then
   begin
     FContentFields := TDictionary<string, string>.Create;
+    // Primary source: WebBroker host (Indy/Apache/ISAPI) parsed ContentFields.
     for I := 0 to Pred(FWebRequest.ContentFields.Count) do
     begin
       FContentFields.AddOrSetValue(LowerCase(FWebRequest.ContentFields.Names[I]),
         FWebRequest.ContentFields.ValueFromIndex[I]);
     end;
+    // Fallback: parts that the host skipped (e.g. older Indy ignoring
+    // Content-Transfer-Encoding: 8bit — issue #758).
+    EnsureMultipartFallback;
+    if Assigned(FMultipartFallback) then
+      for I := 0 to Pred(FMultipartFallback.Count) do
+        FContentFields.AddOrSetValue(LowerCase(FMultipartFallback.Names[I]),
+          FMultipartFallback.ValueFromIndex[I]);
   end;
   Result := FContentFields;
 end;

@@ -408,6 +408,15 @@ type
     [Test]
     procedure TestFileUpload;
 
+    [Test]
+    procedure TestMultipartFormDataTextFields_DMVCClient;
+
+    [Test]
+    procedure TestMultipartFormDataTextFields_IndyRaw;
+
+    [Test]
+    procedure TestMultipartFormDataMixedFilesAndFields_IndyRaw;
+
   end;
 
   [TestFixture]
@@ -537,7 +546,8 @@ uses
 {$ENDIF}
     , TestConstsU, MVCFramework.Tests.Serializer.Entities,
   MVCFramework.Logger, System.IOUtils, MVCFramework.Utils,
-  System.Net.HttpClient, System.Net.URLClient;
+  System.Net.HttpClient, System.Net.URLClient,
+  IdHTTP, IdMultipartFormData, IdGlobal;
 
 function GetServer: string;
 begin
@@ -2142,6 +2152,97 @@ begin
     Assert.Contains(r.Content, 'files=1', 'Should have 1 file');
     Assert.Contains(r.Content, 'dmvc_test_upload.txt', 'Should contain filename');
   finally
+    if TFile.Exists(lTempFile) then
+      TFile.Delete(lTempFile);
+  end;
+end;
+
+procedure TServerTest.TestMultipartFormDataTextFields_DMVCClient;
+var
+  LClient: IMVCRESTClient;
+  r: IMVCRESTResponse;
+begin
+  LClient := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+  LClient
+    .AddBodyFieldFormData('organization_id', '5')
+    .AddBodyFieldFormData('first_name', 'John')
+    .AddBodyFieldFormData('last_name', 'Doe')
+    .AddBodyFieldFormData('job', 'Tester');
+  r := LClient.Post('/multipartfields');
+  Assert.areEqual(HTTP_STATUS.OK, r.StatusCode, 'multipart text fields request failed: ' + r.Content);
+  Assert.Contains(r.Content, 'organization_id=5', 'organization_id missing');
+  Assert.Contains(r.Content, 'first_name=John', 'first_name missing');
+  Assert.Contains(r.Content, 'last_name=Doe', 'last_name missing');
+  Assert.Contains(r.Content, 'job=Tester', 'job missing');
+  Assert.Contains(r.Content, 'missing=', 'absent field should yield empty');
+end;
+
+procedure TServerTest.TestMultipartFormDataTextFields_IndyRaw;
+var
+  lHTTP: TIdHTTP;
+  lForm: TIdMultiPartFormDataStream;
+  lResp: TStringStream;
+begin
+  lHTTP := TIdHTTP.Create(nil);
+  lForm := TIdMultiPartFormDataStream.Create;
+  lResp := TStringStream.Create('', TEncoding.UTF8);
+  try
+    lForm.AddFormField('organization_id', '5', 'utf-8').ContentTransfer := '8bit';
+    lForm.AddFormField('first_name', 'Асқар', 'utf-8').ContentTransfer := '8bit';
+    lForm.AddFormField('last_name', 'Ахмедов', 'utf-8').ContentTransfer := '8bit';
+    lForm.AddFormField('job', 'Тестер', 'utf-8').ContentTransfer := '8bit';
+    lForm.AddFormField('registered_at', '2024-06-19 10:37:40', 'utf-8').ContentTransfer := '8bit';
+    lHTTP.Request.ContentType := lForm.RequestContentType;
+    lHTTP.Post('http://' + TEST_SERVER_ADDRESS + ':8888/multipartfields', lForm, lResp);
+    Assert.areEqual(200, lHTTP.ResponseCode, 'Indy multipart 8bit request failed: ' + lResp.DataString);
+    Assert.Contains(lResp.DataString, 'organization_id=5', 'organization_id missing');
+    Assert.Contains(lResp.DataString, 'first_name=Асқар', 'first_name UTF-8 missing');
+    Assert.Contains(lResp.DataString, 'last_name=Ахмедов', 'last_name UTF-8 missing');
+    Assert.Contains(lResp.DataString, 'job=Тестер', 'job UTF-8 missing');
+    Assert.Contains(lResp.DataString, 'registered_at=2024-06-19 10:37:40', 'registered_at missing');
+    Assert.Contains(lResp.DataString, 'files=0', 'no files expected');
+  finally
+    lResp.Free;
+    lForm.Free;
+    lHTTP.Free;
+  end;
+end;
+
+procedure TServerTest.TestMultipartFormDataMixedFilesAndFields_IndyRaw;
+var
+  lHTTP: TIdHTTP;
+  lForm: TIdMultiPartFormDataStream;
+  lResp: TStringStream;
+  lTempFile: string;
+  lFileStream: TStringStream;
+begin
+  lTempFile := TPath.Combine(TPath.GetTempPath, 'dmvc_multipart_mixed.txt');
+  lFileStream := TStringStream.Create('Mixed multipart payload');
+  try
+    lFileStream.SaveToFile(lTempFile);
+  finally
+    lFileStream.Free;
+  end;
+
+  lHTTP := TIdHTTP.Create(nil);
+  lForm := TIdMultiPartFormDataStream.Create;
+  lResp := TStringStream.Create('', TEncoding.UTF8);
+  try
+    lForm.AddFormField('organization_id', '5', 'utf-8').ContentTransfer := '8bit';
+    lForm.AddFormField('first_name', 'John', 'utf-8').ContentTransfer := '8bit';
+    lForm.AddFile('attachment', lTempFile, 'text/plain');
+    lForm.AddFormField('last_name', 'Doe', 'utf-8').ContentTransfer := '8bit';
+    lHTTP.Request.ContentType := lForm.RequestContentType;
+    lHTTP.Post('http://' + TEST_SERVER_ADDRESS + ':8888/multipartfields', lForm, lResp);
+    Assert.areEqual(200, lHTTP.ResponseCode, 'Indy multipart mixed request failed: ' + lResp.DataString);
+    Assert.Contains(lResp.DataString, 'organization_id=5', 'organization_id missing');
+    Assert.Contains(lResp.DataString, 'first_name=John', 'first_name missing');
+    Assert.Contains(lResp.DataString, 'last_name=Doe', 'last_name missing');
+    Assert.Contains(lResp.DataString, 'files=1', 'expected 1 file part');
+  finally
+    lResp.Free;
+    lForm.Free;
+    lHTTP.Free;
     if TFile.Exists(lTempFile) then
       TFile.Delete(lTempFile);
   end;

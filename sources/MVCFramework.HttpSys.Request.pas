@@ -96,6 +96,7 @@ type
     FCookies: TStringList;
     FCachedContentFieldsText: TStringList;
     FFiles: TMVCHttpSysRequestFiles;
+    FMultipartParsed: Boolean;
 
     procedure ParseCookies;
     procedure EnsureQueryStringParams;
@@ -361,6 +362,7 @@ begin
   FCookies := nil;
   FCachedContentFieldsText := nil;
   FFiles := nil;
+  FMultipartParsed := False;
 
   inherited Create(ASerializers);
   DefineContentType;
@@ -622,6 +624,12 @@ var
   lEqPos: Integer;
   lName, lValue: string;
 begin
+  // Multipart bodies route through ParseMultipartContent, which populates
+  // FContentFields with every text-only part (idempotent via
+  // FMultipartParsed, so calling from multiple accessors is free).
+  if FContentTypeStr.ToLower.Contains('multipart/form-data') then
+    ParseMultipartContent;
+
   if not Assigned(FContentFields) then
   begin
     FContentFields := TDictionary<string, string>.Create;
@@ -708,6 +716,12 @@ var
   lEqPos: Integer;
   lName, lValue: string;
 begin
+  // Mirror of GetContentFields: ParseMultipartContent populates
+  // FCachedContentFieldsText for multipart text parts; the urlencoded
+  // path below covers application/x-www-form-urlencoded.
+  if FContentTypeStr.ToLower.Contains('multipart/form-data') then
+    ParseMultipartContent;
+
   if not Assigned(FCachedContentFieldsText) then
   begin
     FCachedContentFieldsText := TStringList.Create;
@@ -897,6 +911,20 @@ begin
 end;
 
 procedure TMVCHttpSysRequest.ParseMultipartContent;
+//
+// Strategy: HTTP.sys is a kernel-mode listener with no WebBroker host above
+// it, so this method is the only place that walks a multipart/form-data
+// body. It must populate BOTH:
+//   - FFiles: parts with a filename="..." attribute
+//   - FContentFields / FCachedContentFieldsText: text-only parts so
+//     ContentParam('field') returns the value (issue #758 — earlier code
+//     populated only FFiles).
+//
+// Idempotent via FMultipartParsed: callers GetFiles / GetContentFields /
+// DoGetContentFieldsText all converge here, but the body is parsed exactly
+// once. FFiles is always allocated; text-field storages are allocated
+// lazily only when the body actually contains text parts, so non-multipart
+// requests don't pay for unused TStringList/TDictionary instances.
 var
   lBoundary: string;
   lContentType: string;
@@ -913,15 +941,16 @@ var
   lFnPos: Integer;
   lNamePos: Integer;
 begin
-  if Assigned(FFiles) then
+  if FMultipartParsed then
     Exit;
+  FMultipartParsed := True;
+
+  if not Assigned(FFiles) then
+    FFiles := TMVCHttpSysRequestFiles.Create;
 
   lContentType := FContentTypeStr;
   if not lContentType.ToLower.Contains('multipart/form-data') then
-  begin
-    FFiles := TMVCHttpSysRequestFiles.Create;
     Exit;
-  end;
 
   { Extract boundary from Content-Type header }
   lBoundary := '';
@@ -934,12 +963,7 @@ begin
   end;
 
   if lBoundary = '' then
-  begin
-    FFiles := TMVCHttpSysRequestFiles.Create;
     Exit;
-  end;
-
-  FFiles := TMVCHttpSysRequestFiles.Create;
 
   if Length(FBodyBytes) = 0 then
     Exit;
@@ -960,6 +984,8 @@ begin
 
     lHeaderSection := Trim(Copy(lPart, 1, lSplitPos - 1));
     lBodySection := Copy(lPart, lSplitPos + 4, MaxInt);
+    if lBodySection.StartsWith(#13#10) then
+      lBodySection := Copy(lBodySection, 3, MaxInt);
     if lBodySection.EndsWith(#13#10) then
       lBodySection := Copy(lBodySection, 1, Length(lBodySection) - 2);
 
@@ -991,6 +1017,15 @@ begin
         lBodyStream.WriteBuffer(lBodyBytes[0], Length(lBodyBytes));
       lBodyStream.Position := 0;
       FFiles.Add(TMVCHttpSysRequestFile.Create(lFieldName, lFileName, lPartContentType, lBodyStream));
+    end
+    else if lFieldName <> '' then
+    begin
+      if not Assigned(FContentFields) then
+        FContentFields := TDictionary<string, string>.Create;
+      if not Assigned(FCachedContentFieldsText) then
+        FCachedContentFieldsText := TStringList.Create;
+      FContentFields.AddOrSetValue(LowerCase(lFieldName), lBodySection);
+      FCachedContentFieldsText.Add(lFieldName + '=' + lBodySection);
     end;
   end;
 end;

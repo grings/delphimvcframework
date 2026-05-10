@@ -76,6 +76,7 @@ type
     FCachedRawContentLoaded: Boolean;
     FCachedContentFieldsText: TStringList;
     FFiles: TMVCIndyRequestFiles;
+    FMultipartParsed: Boolean;
     procedure ParseCookies;
     procedure EnsureQueryStringParams;
     procedure LoadBody;
@@ -150,6 +151,7 @@ begin
   FCachedRawContentLoaded := False;
   FCachedContentFieldsText := nil;
   FFiles := nil;
+  FMultipartParsed := False;
   inherited Create(ASerializers);
   DefineContentType;
 end;
@@ -429,6 +431,13 @@ var
   lEqPos: Integer;
   lName, lValue: string;
 begin
+  // For multipart bodies, defer to ParseMultipartContent which populates
+  // FContentFields with the text-only parts. ParseMultipartContent is
+  // idempotent (FMultipartParsed flag), so calling it from multiple
+  // accessors costs nothing after the first request.
+  if string(FRequestInfo.ContentType).ToLower.Contains('multipart/form-data') then
+    ParseMultipartContent;
+
   if not Assigned(FContentFields) then
   begin
     FContentFields := TDictionary<string, string>.Create;
@@ -510,6 +519,12 @@ var
   lEqPos: Integer;
   lName, lValue: string;
 begin
+  // Same dual-path approach as GetContentFields: ParseMultipartContent
+  // populates FCachedContentFieldsText for multipart text parts; the
+  // urlencoded path below handles application/x-www-form-urlencoded.
+  if string(FRequestInfo.ContentType).ToLower.Contains('multipart/form-data') then
+    ParseMultipartContent;
+
   if not Assigned(FCachedContentFieldsText) then
   begin
     FCachedContentFieldsText := TStringList.Create;
@@ -659,6 +674,21 @@ begin
 end;
 
 procedure TMVCIndyDirectRequest.ParseMultipartContent;
+//
+// Strategy: the Indy Direct backend has no WebBroker layer parsing the body
+// for it, so this routine is the *single* place that walks a
+// multipart/form-data payload. It must therefore populate BOTH:
+//   - FFiles: parts that carry a filename="..." attribute
+//   - FContentFields / FCachedContentFieldsText: text-only parts (i.e. parts
+//     without a filename), so ContentParam('field') returns the value
+//     (issue #758 — older fix populated only FFiles).
+//
+// Idempotent via FMultipartParsed: GetFiles, GetContentFields and
+// DoGetContentFieldsText all call this method, but the body is split exactly
+// once. FFiles is allocated unconditionally so callers always see a valid
+// (possibly empty) collection; the dictionary/stringlist for text fields are
+// allocated lazily, only when the body actually contains text parts, to keep
+// non-multipart requests cheap.
 var
   lBoundary: string;
   lContentType: string;
@@ -675,15 +705,16 @@ var
   lFnPos: Integer;
   lNamePos: Integer;
 begin
-  if Assigned(FFiles) then
+  if FMultipartParsed then
     Exit;
+  FMultipartParsed := True;
+
+  if not Assigned(FFiles) then
+    FFiles := TMVCIndyRequestFiles.Create;
 
   lContentType := FRequestInfo.ContentType;
   if not lContentType.ToLower.Contains('multipart/form-data') then
-  begin
-    FFiles := TMVCIndyRequestFiles.Create;
     Exit;
-  end;
 
   // Extract boundary from Content-Type header
   lBoundary := '';
@@ -697,12 +728,7 @@ begin
   end;
 
   if lBoundary = '' then
-  begin
-    FFiles := TMVCIndyRequestFiles.Create;
     Exit;
-  end;
-
-  FFiles := TMVCIndyRequestFiles.Create;
 
   // Read raw content
   LoadRawContent;
@@ -726,6 +752,9 @@ begin
 
     lHeaderSection := Trim(Copy(lPart, 1, lSplitPos - 1));
     lBodySection := Copy(lPart, lSplitPos + 4, MaxInt);
+    // Remove leading CRLF (introduced by Split when boundary is preceded by CRLF)
+    if lBodySection.StartsWith(#13#10) then
+      lBodySection := Copy(lBodySection, 3, MaxInt);
     // Remove trailing CRLF
     if lBodySection.EndsWith(#13#10) then
       lBodySection := Copy(lBodySection, 1, Length(lBodySection) - 2);
@@ -751,15 +780,25 @@ begin
       lFieldName := Copy(lFieldName, 1, Pos('"', lFieldName) - 1);
     end;
 
-    // Only add as file if it has a filename
     if lFileName <> '' then
     begin
+      // File part
       lBodyStream := TMemoryStream.Create;
       lBodyBytes := TEncoding.UTF8.GetBytes(lBodySection);
       if Length(lBodyBytes) > 0 then
         lBodyStream.WriteBuffer(lBodyBytes[0], Length(lBodyBytes));
       lBodyStream.Position := 0;
       FFiles.Add(TMVCIndyRequestFile.Create(lFieldName, lFileName, lPartContentType, lBodyStream));
+    end
+    else if lFieldName <> '' then
+    begin
+      // Text field part - populate ContentFields so ContentParam returns the value
+      if not Assigned(FContentFields) then
+        FContentFields := TDictionary<string, string>.Create;
+      if not Assigned(FCachedContentFieldsText) then
+        FCachedContentFieldsText := TStringList.Create;
+      FContentFields.AddOrSetValue(LowerCase(lFieldName), lBodySection);
+      FCachedContentFieldsText.Add(lFieldName + '=' + lBodySection);
     end;
   end;
 end;

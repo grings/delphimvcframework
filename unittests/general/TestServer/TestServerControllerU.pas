@@ -461,6 +461,11 @@ type
     [MVCHTTPMethod([httpPOST])]
     function TestFileUpload: IMVCResponse;
 
+    {multipart form-data text fields (issue #758)}
+    [MVCPath('/multipartfields')]
+    [MVCHTTPMethod([httpPOST])]
+    function TestMultipartFormDataFields: IMVCResponse;
+
     {keep-alive}
     [MVCPath('/keepalive/ping')]
     [MVCHTTPMethod([httpGET])]
@@ -1790,6 +1795,31 @@ end;
 function TTestServerController.KeepAlivePing: IMVCResponse;
 begin
   Result := OKResponse('pong');
+end;
+
+function TTestServerController.TestMultipartFormDataFields: IMVCResponse;
+var
+  lFilesCount: Integer;
+  lParts: TStringList;
+begin
+  if Context.Request.Files <> nil then
+    lFilesCount := Context.Request.Files.Count
+  else
+    lFilesCount := 0;
+
+  lParts := TStringList.Create;
+  try
+    lParts.Add('files=' + IntToStr(lFilesCount));
+    lParts.Add('organization_id=' + Context.Request.ContentParam('organization_id'));
+    lParts.Add('first_name=' + Context.Request.ContentParam('first_name'));
+    lParts.Add('last_name=' + Context.Request.ContentParam('last_name'));
+    lParts.Add('job=' + Context.Request.ContentParam('job'));
+    lParts.Add('registered_at=' + Context.Request.ContentParam('registered_at'));
+    lParts.Add('missing=' + Context.Request.ContentParam('missing'));
+    Result := OKResponse(lParts.Text);
+  finally
+    lParts.Free;
+  end;
 end;
 
 end.
