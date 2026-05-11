@@ -1394,6 +1394,45 @@ type
 
 function MVCResponseBuilder: IMVCResponseBuilder;
 
+// ---------------------------------------------------------------------------
+// Standalone response helpers — short idiomatic names callable from anywhere
+// (no controller/renderer instance needed). The TMVCRenderer.OkResponse /
+// CreatedResponse / etc. methods delegate to these so there is a single
+// source of truth for response construction.
+// ---------------------------------------------------------------------------
+
+function Ok: IMVCResponse; overload;
+function Ok(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function Ok(const Message: string): IMVCResponse; overload;
+
+function Created(const Location: string = ''; const Message: string = ''): IMVCResponse; overload;
+function Created(const Location: string; const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+
+function NoContent: IMVCResponse;
+
+function NotFound: IMVCResponse; overload;
+function NotFound(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function NotFound(const Message: string): IMVCResponse; overload;
+
+function BadRequest: IMVCResponse; overload;
+function BadRequest(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function BadRequest(const Message: string): IMVCResponse; overload;
+
+function Status(const StatusCode: Word): IMVCResponse; overload;
+function Status(const StatusCode: Word; const Message: string): IMVCResponse; overload;
+function Status(const StatusCode: Word; const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+
+// RFC 7807 problem-details response. Body shape is the standard
+// {type, title, status, detail, instance} JSON object. Content-Type
+// emitted is application/json (acceptable per RFC 7807; switch to
+// application/problem+json explicitly if strict media-type matters).
+function ProblemDetails(const StatusCode: Word; const Title: string;
+  const Detail: string = ''; const Instance: string = ''): IMVCResponse;
+
+// Standard reason phrase for the most common HTTP status codes. Used as
+// the default ProblemDetails 'title' when an exception bubbles up.
+function ReasonPhraseFor(const StatusCode: Word): string;
+
 implementation
 
 uses
@@ -3956,17 +3995,17 @@ end;
 
 function TMVCRenderer.BadRequestResponse: IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.BadRequest, nil);
+  Result := BadRequest;
 end;
 
 function TMVCRenderer.BadRequestResponse(const Error: TObject): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.BadRequest, Error);
+  Result := BadRequest(Error);
 end;
 
 function TMVCRenderer.BadRequestResponse(const Message: String): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.BadRequest, nil, Message);
+  Result := BadRequest(Message);
 end;
 
 function TMVCRenderer.UnprocessableContentResponse: IMVCResponse;
@@ -4004,16 +4043,8 @@ begin
 end;
 
 function TMVCRenderer.CreatedResponse(const Location: string ; const Message: String): IMVCResponse;
-var
-  lRespBuilder: IMVCResponseBuilder;
 begin
-  lRespBuilder := MVCResponseBuilder;
-  if not Location.IsEmpty then
-  begin
-    lRespBuilder.Header('location', Location)
-  end;
-  lRespBuilder.Body(Message);
-  Result := lRespBuilder.StatusCode(HTTP_STATUS.Created).Build;
+  Result := Created(Location, Message);
 end;
 
 destructor TMVCRenderer.Destroy;
@@ -4029,19 +4060,11 @@ end;
 
 function TMVCRenderer.CreatedResponse(const Location: string;
   const Body: TObject; const AOwns: Boolean): IMVCResponse;
-var
-  lRespBuilder: IMVCResponseBuilder;
 begin
-  lRespBuilder := MVCResponseBuilder;
-  if not Location.IsEmpty then
-  begin
-    lRespBuilder.Header('location', Location)
-  end;
   if Assigned(Body) then
-  begin
-    lRespBuilder.Body(Body, AOwns);
-  end;
-  Result := lRespBuilder.StatusCode(HTTP_STATUS.Created).Build;
+    Result := Created(Location, Body, AOwns)
+  else
+    Result := Created(Location);
 end;
 
 function TMVCRenderer.GetContentType: string;
@@ -4314,22 +4337,22 @@ end;
 
 function TMVCRenderer.NoContentResponse: IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.NoContent, nil);
+  Result := NoContent;
 end;
 
 function TMVCRenderer.NotFoundResponse: IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.NotFound, nil);
+  Result := NotFound;
 end;
 
 function TMVCRenderer.NotFoundResponse(const Body: TObject): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.NotFound, Body);
+  Result := NotFound(Body);
 end;
 
 function TMVCRenderer.NotFoundResponse(const Message: String): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.NotFound, nil, Message);
+  Result := NotFound(Message);
 end;
 
 function TMVCRenderer.NotModifiedResponse: IMVCResponse;
@@ -4339,17 +4362,17 @@ end;
 
 function TMVCRenderer.OKResponse: IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.OK, nil);
+  Result := Ok;
 end;
 
 function TMVCRenderer.OKResponse(const Message: String): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.OK, nil, Message);
+  Result := Ok(Message);
 end;
 
 function TMVCRenderer.OKResponse(const Body: TObject): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(HTTP_STATUS.OK, Body);
+  Result := Ok(Body);
 end;
 
 function TMVCRenderer.OKResponse(const Body: IMVCObjectDictionary): IMVCResponse;
@@ -4362,17 +4385,17 @@ end;
 
 function TMVCRenderer.StatusResponse(const StatusCode: Word): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(StatusCode, nil);
+  Result := Status(StatusCode);
 end;
 
 function TMVCRenderer.StatusResponse(const StatusCode: Word; const Message: String): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(StatusCode, nil, Message);
+  Result := Status(StatusCode, Message);
 end;
 
 function TMVCRenderer.StatusResponse(const StatusCode: Word; const Body: TObject): IMVCResponse;
 begin
-  Result := InternalStatusCodeResponse(StatusCode, Body);
+  Result := Status(StatusCode, Body);
 end;
 
 function TMVCController.GetViewData(const aModelName: string): TValue;
@@ -5418,6 +5441,144 @@ end;
 function MVCResponseBuilder: IMVCResponseBuilder;
 begin
   Result := TMVCResponseBuilder.Create;
+end;
+
+// ---------------------------------------------------------------------------
+// Standalone response helpers
+// ---------------------------------------------------------------------------
+
+function Status(const StatusCode: Word): IMVCResponse;
+begin
+  Result := MVCResponseBuilder.StatusCode(StatusCode).Build;
+end;
+
+function Status(const StatusCode: Word; const Message: string): IMVCResponse;
+begin
+  Result := MVCResponseBuilder.StatusCode(StatusCode).Body(Message).Build;
+end;
+
+function Status(const StatusCode: Word; const Body: TObject;
+  const Owns: Boolean): IMVCResponse;
+begin
+  Result := MVCResponseBuilder.StatusCode(StatusCode).Body(Body, Owns).Build;
+end;
+
+function Ok: IMVCResponse;
+begin
+  Result := Status(http_status.OK);
+end;
+
+function Ok(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.OK, Body, Owns);
+end;
+
+function Ok(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.OK, Message);
+end;
+
+function Created(const Location: string; const Message: string): IMVCResponse;
+var
+  lBuilder: IMVCResponseBuilder;
+begin
+  lBuilder := MVCResponseBuilder.StatusCode(http_status.Created);
+  if Location <> '' then
+    lBuilder.Header('location', Location);
+  if Message <> '' then
+    lBuilder.Body(Message);
+  Result := lBuilder.Build;
+end;
+
+function Created(const Location: string; const Body: TObject;
+  const Owns: Boolean): IMVCResponse;
+var
+  lBuilder: IMVCResponseBuilder;
+begin
+  lBuilder := MVCResponseBuilder.StatusCode(http_status.Created);
+  if Location <> '' then
+    lBuilder.Header('location', Location);
+  lBuilder.Body(Body, Owns);
+  Result := lBuilder.Build;
+end;
+
+function NoContent: IMVCResponse;
+begin
+  Result := Status(http_status.NoContent);
+end;
+
+function NotFound: IMVCResponse;
+begin
+  Result := Status(http_status.NotFound);
+end;
+
+function NotFound(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.NotFound, Body, Owns);
+end;
+
+function NotFound(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.NotFound, Message);
+end;
+
+function BadRequest: IMVCResponse;
+begin
+  Result := Status(http_status.BadRequest);
+end;
+
+function BadRequest(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.BadRequest, Body, Owns);
+end;
+
+function BadRequest(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.BadRequest, Message);
+end;
+
+function ProblemDetails(const StatusCode: Word; const Title: string;
+  const Detail: string; const Instance: string): IMVCResponse;
+var
+  J: TJsonObject;
+begin
+  J := TJsonObject.Create;
+  J.S['type']   := 'about:blank';
+  J.S['title']  := Title;
+  J.I['status'] := StatusCode;
+  if Detail <> '' then   J.S['detail']   := Detail;
+  if Instance <> '' then J.S['instance'] := Instance;
+  Result := MVCResponseBuilder.StatusCode(StatusCode).Body(J, True).Build;
+end;
+
+function ReasonPhraseFor(const StatusCode: Word): string;
+begin
+  case StatusCode of
+    100: Result := 'Continue';
+    200: Result := 'OK';
+    201: Result := 'Created';
+    202: Result := 'Accepted';
+    204: Result := 'No Content';
+    301: Result := 'Moved Permanently';
+    302: Result := 'Found';
+    304: Result := 'Not Modified';
+    400: Result := 'Bad Request';
+    401: Result := 'Unauthorized';
+    403: Result := 'Forbidden';
+    404: Result := 'Not Found';
+    405: Result := 'Method Not Allowed';
+    406: Result := 'Not Acceptable';
+    409: Result := 'Conflict';
+    410: Result := 'Gone';
+    415: Result := 'Unsupported Media Type';
+    422: Result := 'Unprocessable Content';
+    429: Result := 'Too Many Requests';
+    500: Result := 'Internal Server Error';
+    501: Result := 'Not Implemented';
+    503: Result := 'Service Unavailable';
+  else
+    Result := 'Error';
+  end;
 end;
 
 function TMVCResponseBuilder.Body(const MessageText: String): IMVCResponseBuilder;
