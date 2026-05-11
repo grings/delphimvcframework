@@ -146,6 +146,7 @@ type
     fFilters: TArray<TMVCEndpointFilter>;
     fName: string;
     fMetadata: TDictionary<string, TValue>;
+    fParamTypes: TArray<PTypeInfo>;
   public
     constructor Create(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk);
@@ -159,6 +160,10 @@ type
     // Per-endpoint metadata for OpenAPI / introspection / auth policies.
     property Name: string read fName write fName;
     property Metadata: TDictionary<string, TValue> read fMetadata;
+    // Type info for each generic handler parameter (T1, T2, T3, T4 in order).
+    // Captured at registration time so OpenAPI emitter / introspection tools
+    // can read the handler signature. Length() = 0 for parameter-less handlers.
+    property ParamTypes: TArray<PTypeInfo> read fParamTypes write fParamTypes;
   end;
 
   // Per-endpoint chainable configuration. Returned by MapXxx — wraps the
@@ -196,6 +201,10 @@ type
     // Tracks an object whose lifetime is bound to the engine. Idempotent:
     // adding the same instance twice keeps a single ownership record.
     procedure TrackOwned(AObject: TObject);
+    // Snapshot of registered routes (for introspection: OpenAPI emitter,
+    // diagnostics, route listing). Returns a copy of the internal array so
+    // the caller cannot mutate the registry through it.
+    function AllRoutes: TArray<TMVCMinimalRoute>;
   end;
 
   // -------------------------------------------------------------------------
@@ -268,9 +277,11 @@ type
     fData: T;
     fFilters: TArray<TMVCEndpointFilter>;
     function RegisterRoute(AVerb: TMVCHTTPMethodType; const APath: string;
-      AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
+      AThunk: TMVCMinimalThunk;
+      const AParamTypes: TArray<PTypeInfo>): TMVCMinimalRoute;
     function RegisterMany(const AVerbs: array of TMVCHTTPMethodType;
-      const APath: string; AThunk: TMVCMinimalThunk): TMVCRouteHandle;
+      const APath: string; AThunk: TMVCMinimalThunk;
+      const AParamTypes: TArray<PTypeInfo>): TMVCRouteHandle;
   public
     class function Create(AEngine: TMVCEngine; const APrefix: string;
       const AData: T): TMVCRouteGroup<T>; static;
@@ -393,7 +404,8 @@ type
   strict private
     function GetOrCreateMiddleware: TMVCMinimalAPIMiddleware;
     function MapInternal(AVerb: TMVCHTTPMethodType; const APath: string;
-      AThunk: TMVCMinimalThunk): TMVCEngine;
+      AThunk: TMVCMinimalThunk;
+      const AParamTypes: TArray<PTypeInfo>): TMVCEngine;
   public
     function Root: TMVCRouteGroup<TObject>;
 
@@ -575,6 +587,15 @@ begin
   // idempotent: same instance registered twice -> only one entry, freed once
   if fOwnedData.IndexOf(AObject) < 0 then
     fOwnedData.Add(AObject);
+end;
+
+function TMVCMinimalRegistry.AllRoutes: TArray<TMVCMinimalRoute>;
+var
+  I: Integer;
+begin
+  SetLength(Result, fRoutes.Count);
+  for I := 0 to fRoutes.Count - 1 do
+    Result[I] := fRoutes[I];
 end;
 
 // Apply a route constraint to a captured segment value. Returns False if the
@@ -1371,9 +1392,14 @@ begin
 end;
 
 function TMVCEngineMinimalAPIHelper.MapInternal(AVerb: TMVCHTTPMethodType;
-  const APath: string; AThunk: TMVCMinimalThunk): TMVCEngine;
+  const APath: string; AThunk: TMVCMinimalThunk;
+  const AParamTypes: TArray<PTypeInfo>): TMVCEngine;
+var
+  lRoute: TMVCMinimalRoute;
 begin
-  GetOrCreateMiddleware.Registry.Add(AVerb, APath, AThunk);
+  lRoute := GetOrCreateMiddleware.Registry.Add(AVerb, APath, AThunk);
+  if Length(AParamTypes) > 0 then
+    lRoute.ParamTypes := AParamTypes;
   Result := Self;
 end;
 
@@ -1412,155 +1438,155 @@ end;
 function TMVCEngineMinimalAPIHelper.MapGet(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCEngine;
 begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make0(AHandler));
+  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make0(AHandler), nil);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapGet<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
 begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make1<T1>(AHandler));
+  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapGet<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
 begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler));
+  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapGet<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
 begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler));
+  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapGet<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
 begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler));
+  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 // ------------------ POST ------------------
 function TMVCEngineMinimalAPIHelper.MapPost(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCEngine;
 begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make0(AHandler));
+  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make0(AHandler), nil);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPost<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
 begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make1<T1>(AHandler));
+  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPost<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
 begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler));
+  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPost<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
 begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler));
+  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPost<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
 begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler));
+  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 // ------------------ PUT ------------------
 function TMVCEngineMinimalAPIHelper.MapPut(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCEngine;
 begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make0(AHandler));
+  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make0(AHandler), nil);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPut<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
 begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make1<T1>(AHandler));
+  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPut<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
 begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler));
+  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPut<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
 begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler));
+  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPut<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
 begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler));
+  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 // ------------------ DELETE ------------------
 function TMVCEngineMinimalAPIHelper.MapDelete(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCEngine;
 begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make0(AHandler));
+  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make0(AHandler), nil);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapDelete<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
 begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make1<T1>(AHandler));
+  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapDelete<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
 begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler));
+  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapDelete<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
 begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler));
+  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapDelete<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
 begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler));
+  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 // ------------------ PATCH ------------------
 function TMVCEngineMinimalAPIHelper.MapPatch(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCEngine;
 begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make0(AHandler));
+  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make0(AHandler), nil);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPatch<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
 begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make1<T1>(AHandler));
+  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPatch<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
 begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler));
+  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPatch<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
 begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler));
+  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
 end;
 
 function TMVCEngineMinimalAPIHelper.MapPatch<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
 begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler));
+  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 { -------------------------------------------------------------------------- }
@@ -1577,7 +1603,8 @@ begin
 end;
 
 function TMVCRouteGroup<T>.RegisterRoute(AVerb: TMVCHTTPMethodType;
-  const APath: string; AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
+  const APath: string; AThunk: TMVCMinimalThunk;
+  const AParamTypes: TArray<PTypeInfo>): TMVCMinimalRoute;
 begin
   Result := fEngine.RegisterFromGroup(AVerb, fPrefix + APath, AThunk);
   if fData <> nil then
@@ -1587,6 +1614,8 @@ begin
   end;
   // copy filter array (TArray = refcount bump, near zero cost)
   Result.Filters := fFilters;
+  if Length(AParamTypes) > 0 then
+    Result.ParamTypes := AParamTypes;
 end;
 
 function TMVCRouteGroup<T>.Prefix(const APath: string): TMVCRouteGroup<T>;
@@ -1621,14 +1650,15 @@ end;
 
 function TMVCRouteGroup<T>.RegisterMany(
   const AVerbs: array of TMVCHTTPMethodType;
-  const APath: string; AThunk: TMVCMinimalThunk): TMVCRouteHandle;
+  const APath: string; AThunk: TMVCMinimalThunk;
+  const AParamTypes: TArray<PTypeInfo>): TMVCRouteHandle;
 var
   V: TMVCHTTPMethodType;
   lLast: TMVCMinimalRoute;
 begin
   lLast := nil;
   for V in AVerbs do
-    lLast := RegisterRoute(V, APath, AThunk);
+    lLast := RegisterRoute(V, APath, AThunk, AParamTypes);
   // The returned handle wraps the LAST verb's route. Calling WithName on it
   // names only that one — most callers don't care because MapMethods is a
   // shortcut; if you need per-verb naming, register each verb separately.
@@ -1641,155 +1671,155 @@ end;
 function TMVCRouteGroup<T>.MapGet(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make0(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make0(AHandler), nil));
 end;
 
 function TMVCRouteGroup<T>.MapGet<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make1<T1>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]));
 end;
 
 function TMVCRouteGroup<T>.MapGet<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]));
 end;
 
 function TMVCRouteGroup<T>.MapGet<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]));
 end;
 
 function TMVCRouteGroup<T>.MapGet<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpGET, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]));
 end;
 
 // POST
 function TMVCRouteGroup<T>.MapPost(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make0(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make0(AHandler), nil));
 end;
 
 function TMVCRouteGroup<T>.MapPost<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make1<T1>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]));
 end;
 
 function TMVCRouteGroup<T>.MapPost<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]));
 end;
 
 function TMVCRouteGroup<T>.MapPost<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]));
 end;
 
 function TMVCRouteGroup<T>.MapPost<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPOST, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]));
 end;
 
 // PUT
 function TMVCRouteGroup<T>.MapPut(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make0(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make0(AHandler), nil));
 end;
 
 function TMVCRouteGroup<T>.MapPut<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make1<T1>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]));
 end;
 
 function TMVCRouteGroup<T>.MapPut<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]));
 end;
 
 function TMVCRouteGroup<T>.MapPut<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]));
 end;
 
 function TMVCRouteGroup<T>.MapPut<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPUT, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]));
 end;
 
 // DELETE
 function TMVCRouteGroup<T>.MapDelete(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make0(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make0(AHandler), nil));
 end;
 
 function TMVCRouteGroup<T>.MapDelete<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make1<T1>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]));
 end;
 
 function TMVCRouteGroup<T>.MapDelete<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]));
 end;
 
 function TMVCRouteGroup<T>.MapDelete<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]));
 end;
 
 function TMVCRouteGroup<T>.MapDelete<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpDELETE, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]));
 end;
 
 // PATCH
 function TMVCRouteGroup<T>.MapPatch(const APath: string;
   const AHandler: TMVCMinimalFunc): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make0(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make0(AHandler), nil));
 end;
 
 function TMVCRouteGroup<T>.MapPatch<T1>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make1<T1>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]));
 end;
 
 function TMVCRouteGroup<T>.MapPatch<T1, T2>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]));
 end;
 
 function TMVCRouteGroup<T>.MapPatch<T1, T2, T3>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]));
 end;
 
 function TMVCRouteGroup<T>.MapPatch<T1, T2, T3, T4>(const APath: string;
   const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCRouteHandle;
 begin
-  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler)));
+  Result := TMVCRouteHandle.Create(RegisterRoute(httpPATCH, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]));
 end;
 
 // MapMethods (multi-verb)
@@ -1797,31 +1827,31 @@ end;
 function TMVCRouteGroup<T>.MapMethods(const AVerbs: array of TMVCHTTPMethodType;
   const APath: string; const AHandler: TMVCMinimalFunc): TMVCRouteHandle;
 begin
-  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make0(AHandler));
+  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make0(AHandler), nil);
 end;
 
 function TMVCRouteGroup<T>.MapMethods<T1>(const AVerbs: array of TMVCHTTPMethodType;
   const APath: string; const AHandler: TMVCMinimalFunc<T1>): TMVCRouteHandle;
 begin
-  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make1<T1>(AHandler));
+  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
 end;
 
 function TMVCRouteGroup<T>.MapMethods<T1, T2>(const AVerbs: array of TMVCHTTPMethodType;
   const APath: string; const AHandler: TMVCMinimalFunc<T1, T2>): TMVCRouteHandle;
 begin
-  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler));
+  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
 end;
 
 function TMVCRouteGroup<T>.MapMethods<T1, T2, T3>(const AVerbs: array of TMVCHTTPMethodType;
   const APath: string; const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCRouteHandle;
 begin
-  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler));
+  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
 end;
 
 function TMVCRouteGroup<T>.MapMethods<T1, T2, T3, T4>(const AVerbs: array of TMVCHTTPMethodType;
   const APath: string; const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCRouteHandle;
 begin
-  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler));
+  Result := RegisterMany(AVerbs, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 initialization

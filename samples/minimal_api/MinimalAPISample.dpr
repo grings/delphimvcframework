@@ -66,6 +66,8 @@ uses
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
   MVCFramework.MinimalAPI in '..\..\sources\MVCFramework.MinimalAPI.pas',
+  MVCFramework.OpenAPI3 in '..\..\sources\MVCFramework.OpenAPI3.pas',
+  MVCFramework.Middleware.OpenAPI3 in '..\..\sources\MVCFramework.Middleware.OpenAPI3.pas',
   Entities.PersonU in 'Entities.PersonU.pas',
   Services.PeopleU in 'Services.PeopleU.pas',
   RoutesU in 'RoutesU.pas';
@@ -86,6 +88,7 @@ procedure RunServer;
 var
   lEngine: TMVCEngine;
   lServer: IMVCServer;
+  lOAInfo: TMVCOpenAPIInfo;
 begin
   WriteLn('** DMVCFramework Minimal API Sample (PREVIEW) **');
   WriteLn;
@@ -100,7 +103,16 @@ begin
     // not the engine itself. From there it spawns /v1, /v2 and /search
     // sub-groups.
     ConfigureRoutes(lEngine.Root);
-    ConfigureRoutes(lEngine.Prefix('/v2'));
+
+    // OpenAPI 3.1 emitter. Auto-discovers the minimal API routes from the
+    // engine's middleware stack each time /openapi.json is requested.
+    lOAInfo.Title := 'DMVC Minimal API Sample';
+    lOAInfo.Version := '1.0';
+    lOAInfo.Description := 'Example OpenAPI 3.1 emission over a Minimal API server.';
+    lOAInfo.ContactName := 'DMVCFramework';
+    lOAInfo.ContactUrl := 'https://github.com/danieleteti/delphimvcframework';
+    lOAInfo.LicenseName := 'Apache-2.0';
+    lEngine.AddMiddleware(TMVCOpenAPI3Middleware.Create(lEngine, lOAInfo));
 
     lServer := TMVCServerFactory.CreateIndyDirect(lEngine);
     lServer.Listen(PORT);
@@ -108,6 +120,7 @@ begin
       WriteLn(Format('Server started on http://localhost:%d (Indy Direct)', [PORT]));
       WriteLn;
       WriteLn('Try:');
+      WriteLn('  GET    /openapi.json     <-- OpenAPI 3.1 spec');
       WriteLn('  GET    /health');
       WriteLn('  GET    /v1/people');
       WriteLn('  GET    /v2/people');
