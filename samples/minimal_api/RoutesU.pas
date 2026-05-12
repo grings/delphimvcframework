@@ -27,6 +27,7 @@ implementation
 uses
   System.SysUtils,
   System.Diagnostics,
+  JsonDataObjects,
   MVCFramework.Logger,
   MVCFramework.Container,
   Services.PeopleU;
@@ -111,20 +112,24 @@ begin
 
   // GET /v1/people — handler reads group data (TApiVersion) AND a DI
   // service. Returns the people list with a deprecation note.
+  // The body is built as a real TJsonObject so the framework serializes
+  // it cleanly. Passing a string to Ok() would wrap it in {"message":...}.
   lV1.MapGet<TApiVersion, IPeopleService>('/people',
     function (Ver: TApiVersion; Svc: IPeopleService): IMVCResponse
     var
       lAll: TPeopleList;
-      lJson, lWarn: string;
+      lJson: TJsonObject;
     begin
       lAll := Svc.GetAll;
       try
+        lJson := TJsonObject.Create;
+        lJson.I['version'] := Ver.Number;
+        lJson.I['count'] := lAll.Count;
         if Ver.Deprecated then
-          lWarn := Format(',"deprecated":true,"sunset":"%s"', [Ver.Sunset])
-        else
-          lWarn := '';
-        lJson := Format('{"version":%d,"count":%d%s}',
-          [Ver.Number, lAll.Count, lWarn]);
+        begin
+          lJson.B['deprecated'] := True;
+          lJson.S['sunset'] := Ver.Sunset;
+        end;
       finally
         lAll.Free;
       end;
@@ -153,12 +158,13 @@ begin
     function (Ver: TApiVersion; Svc: IPeopleService): IMVCResponse
     var
       lAll: TPeopleList;
-      lJson: string;
+      lJson: TJsonObject;
     begin
       lAll := Svc.GetAll;
       try
-        lJson := Format('{"version":%d,"count":%d}',
-          [Ver.Number, lAll.Count]);
+        lJson := TJsonObject.Create;
+        lJson.I['version'] := Ver.Number;
+        lJson.I['count'] := lAll.Count;
       finally
         lAll.Free;
       end;
@@ -219,8 +225,12 @@ begin
       end)
     .MapGet('/stats',
       function: IMVCResponse
+      var
+        lJson: TJsonObject;
       begin
-        Result := Ok('{"stats":"all good"}');
+        lJson := TJsonObject.Create;
+        lJson.S['stats'] := 'all good';
+        Result := Ok(lJson);
       end);
 
   // ---------------------------------------------------------------------
@@ -230,13 +240,15 @@ begin
     function (Req: TPeopleSearchRequest; Svc: IPeopleService): IMVCResponse
     var
       lAll: TPeopleList;
-      lJson: string;
+      lJson: TJsonObject;
     begin
       lAll := Svc.GetAll;
       try
-        lJson := Format(
-          '{"tenant":"%s","page":%d,"pageSize":%d,"total":%d}',
-          [Req.Tenant, Req.Page, Req.PageSize, lAll.Count]);
+        lJson := TJsonObject.Create;
+        lJson.S['tenant'] := Req.Tenant;
+        lJson.I['page'] := Req.Page;
+        lJson.I['pageSize'] := Req.PageSize;
+        lJson.I['total'] := lAll.Count;
       finally
         lAll.Free;
       end;

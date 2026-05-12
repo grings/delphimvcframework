@@ -33,8 +33,7 @@ uses
   System.Rtti,
   MVCFramework.Validation,
   MVCFramework.ValidationEngine,
-  MVCFramework.Validators,
-  MVCFramework.Validators.CrossField;
+  MVCFramework.Validators;
 
 type
   // Test model without validators (existing code scenario)

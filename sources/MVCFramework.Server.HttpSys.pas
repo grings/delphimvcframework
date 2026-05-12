@@ -106,6 +106,7 @@ type
     destructor Destroy; override;
     procedure Listen(APort: Integer = 8080; const AHost: string = 'localhost');
     procedure Stop;
+    procedure RunAndWait(APort: Integer = 8080; const AHost: string = 'localhost');
     function IsRunning: Boolean;
   end;
 
@@ -117,7 +118,7 @@ implementation
 
 uses
   MVCFramework.HttpSys.Request, MVCFramework.HttpSys.Response,
-  MVCFramework.Logger;
+  MVCFramework.Logger, MVCFramework.Signal;
 
 const
   { Initial request buffer: 16KB covers most request headers + small bodies }
@@ -469,6 +470,17 @@ end;
 function TMVCHttpSysServer.IsRunning: Boolean;
 begin
   Result := FActive;
+end;
+
+procedure TMVCHttpSysServer.RunAndWait(APort: Integer; const AHost: string);
+begin
+  Listen(APort, AHost);
+  try
+    WaitForTerminationSignal;
+    EnterInShutdownState;
+  finally
+    Stop;
+  end;
 end;
 
 procedure TMVCHttpSysServer.SetEngine(AEngine: TMVCEngine);

@@ -17,14 +17,14 @@ uses
 {{if program_ssv_any}}
   Controllers.APIU,
 {{endif}}
-{{if controller_crud_methods_generate}}
+{{if @(controller_crud_methods_generate and (not program_minimal_api))}}
   Controllers.PeopleU,
 {{endif}}
 {{if jsonrpc_generate}}
   {{:jsonrpc_unit_name}},
   MVCFramework.JSONRPC,
 {{endif}}
-{{if webmodule_middleware_jwt}}
+{{if @(webmodule_middleware_jwt and (not program_minimal_api))}}
   {{:authentication_unit_name}},
   MVCFramework.JWT,
   MVCFramework.Middleware.JWT,
@@ -46,46 +46,46 @@ uses
 {{endif}}
   MVCFramework.Commons,
   MVCFramework.Logger,
-{{if webmodule_middleware_activerecord}}
+{{if @(webmodule_middleware_activerecord and (not program_minimal_api))}}
   MVCFramework.Middleware.ActiveRecord,
 {{endif}}
-{{if webmodule_middleware_session_memory}}
+{{if @(webmodule_middleware_session_memory and (not program_minimal_api))}}
   MVCFramework.Middleware.Session,
 {{endif}}
-{{if webmodule_middleware_session_file}}
+{{if @(webmodule_middleware_session_file and (not program_minimal_api))}}
   MVCFramework.Middleware.Session,
 {{endif}}
-{{if webmodule_middleware_session_database}}
+{{if @(webmodule_middleware_session_database and (not program_minimal_api))}}
   MVCFramework.Middleware.Session,
 {{endif}}
 {{if program_ssv_any}}
   MVCFramework.Middleware.Redirect,
 {{endif}}
-{{if @(program_ssv_any or webmodule_middleware_staticfiles)}}
+{{if @((program_ssv_any or webmodule_middleware_staticfiles) and (not program_minimal_api))}}
   MVCFramework.Middleware.StaticFiles,
 {{endif}}
-{{if webmodule_middleware_analytics}}
+{{if @(webmodule_middleware_analytics and (not program_minimal_api))}}
   MVCFramework.Middleware.Analytics,
 {{endif}}
-{{if webmodule_middleware_trace}}
+{{if @(webmodule_middleware_trace and (not program_minimal_api))}}
   MVCFramework.Middleware.Trace,
 {{endif}}
-{{if webmodule_middleware_cors}}
+{{if @(webmodule_middleware_cors and (not program_minimal_api))}}
   MVCFramework.Middleware.CORS,
 {{endif}}
-{{if webmodule_middleware_etag}}
+{{if @(webmodule_middleware_etag and (not program_minimal_api))}}
   MVCFramework.Middleware.ETag,
 {{endif}}
-{{if webmodule_middleware_ratelimit}}
+{{if @(webmodule_middleware_ratelimit and (not program_minimal_api))}}
   MVCFramework.Middleware.RateLimit,
 {{endif}}
-{{if webmodule_middleware_compression}}
+{{if @(webmodule_middleware_compression and (not program_minimal_api))}}
   MVCFramework.Middleware.Compression,
 {{endif}}
   System.SysUtils;
 
 procedure ConfigureEngine(AEngine: TMVCEngine);
-{{if @(webmodule_middleware_ratelimit or webmodule_middleware_jwt or program_ssv_any or webmodule_middleware_staticfiles)}}
+{{if @((not program_minimal_api) and (webmodule_middleware_ratelimit or webmodule_middleware_jwt or program_ssv_any or webmodule_middleware_staticfiles))}}
 var
 {{if webmodule_middleware_ratelimit}}
   LRateLimitMiddleware: TMVCRateLimitMiddleware;
@@ -101,7 +101,7 @@ var
 {{endif}}
 {{endif}}
 begin
-{{if @(program_ssv_any or webmodule_middleware_staticfiles)}}
+{{if @((not program_minimal_api) and (program_ssv_any or webmodule_middleware_staticfiles))}}
 
   // Static files path (www folder at same level as executable)
   LWwwPath := TPath.Combine(AppPath, 'www');
@@ -114,10 +114,17 @@ begin
 {{if program_ssv_any}}
   AEngine.AddController(TAPIController);
 {{endif}}
-{{if controller_crud_methods_generate}}
+{{if @(controller_crud_methods_generate and (not program_minimal_api))}}
   AEngine.AddController(TPeopleController);
 {{endif}}
   // Controllers - END
+{{if program_minimal_api}}
+  // Minimal API mode: routes are wired by ConfigureRoutes(LEngine.Root)
+  // called explicitly from the .dpr right after ConfigureEngine. Cross-
+  // cutting concerns (auth, logging, rate-limit) live in RoutesU as
+  // endpoint filters applied via .Use() on route groups — NOT as engine-
+  // wide AddMiddleware calls.
+{{endif}}
 {{if program_ssv_templatepro}}
 
   // Server Side View
@@ -137,6 +144,7 @@ begin
   // Server Side View - END
 {{endif}}
 
+{{if @(not program_minimal_api)}}
 {{if webmodule_middleware_ratelimit}}
 
   LRateLimitMiddleware := TMVCRateLimitMiddleware.Create(
@@ -267,6 +275,7 @@ begin
   ));
 {{endif}}
   // Middleware - END
+{{endif}}
 {{if program_ssv_templatepro}}
 
   // Exception handler for server-side views (browser requests only)

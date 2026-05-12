@@ -591,6 +591,38 @@ object frmDMVCNewProject: TfrmDMVCNewProject
         TabOrder = 0
         OnClick = rgApplicationTypeClick
       end
+      object gbApiStyle: TGroupBox
+        Left = 20
+        Top = 145
+        Width = 373
+        Height = 70
+        Caption = 'API Style'
+        TabOrder = 1
+        object lblApiStyleDescription: TLabel
+          Left = 16
+          Top = 44
+          Width = 345
+          Height = 13
+          Caption =
+            'Lambda routes registered on TMVCEngine.Root (FastAPI / .NET sty' +
+            'le).'
+          Font.Charset = DEFAULT_CHARSET
+          Font.Color = clGray
+          Font.Height = -11
+          Font.Name = 'Tahoma'
+          Font.Style = []
+          ParentFont = False
+        end
+        object chkMinimalAPI: TCheckBox
+          Left = 16
+          Top = 22
+          Width = 340
+          Height = 17
+          Caption = 'Use Minimal API (no controller class)'
+          TabOrder = 0
+          OnClick = chkMinimalAPIClick
+        end
+      end
     end
     object tsServer: TTabSheet
       Caption = 'Server'

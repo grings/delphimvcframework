@@ -96,6 +96,8 @@ begin
   // - Controllers.HomeU with an "index" endpoint that sanity-checks the server
   // - Controllers.PeopleU with the CRUD sample
   AForm.edtControllerClassName.Text := 'THomeController';
+  AForm.chkMinimalAPI.Visible := True;      // user can opt in to lambda routes
+  AForm.chkMinimalAPI.Checked := False;     // default: controller class (unchanged behavior)
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := True;
   AForm.chkCreateActionFiltersMethods.Checked := False;
@@ -137,6 +139,8 @@ procedure ApplyPreset_WebApplication(AForm: TfrmDMVCNewProject);
 begin
   // Controller
   AForm.edtControllerClassName.Text := 'TWebController';
+  AForm.chkMinimalAPI.Visible := False;     // SSV needs controller-based RenderView
+  AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := False;
   AForm.chkCreateActionFiltersMethods.Checked := False;
@@ -178,6 +182,8 @@ procedure ApplyPreset_JSONRPC(AForm: TfrmDMVCNewProject);
 begin
   // Controller - minimal, just for health check
   AForm.edtControllerClassName.Text := 'THealthController';
+  AForm.chkMinimalAPI.Visible := False;     // JSON-RPC publisher is controller-based
+  AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := False;
   AForm.chkCreateActionFiltersMethods.Checked := False;
@@ -220,6 +226,8 @@ procedure ApplyPreset_RealTime(AForm: TfrmDMVCNewProject);
 begin
   // Controller
   AForm.edtControllerClassName.Text := 'TRealTimeController';
+  AForm.chkMinimalAPI.Visible := False;     // RealTime preset wires controller-based companion routes
+  AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := False;
   AForm.chkCreateActionFiltersMethods.Checked := False;
@@ -261,6 +269,8 @@ procedure ApplyPreset_FullStack(AForm: TfrmDMVCNewProject);
 begin
   // Controller
   AForm.edtControllerClassName.Text := 'TAppController';
+  AForm.chkMinimalAPI.Visible := False;     // SSV + JSON-RPC require controllers
+  AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := True;
   AForm.chkCreateActionFiltersMethods.Checked := True;
@@ -310,6 +320,8 @@ begin
     begin
       // Reset visibility that may have been changed by other presets
       AForm.chkHtmx.Visible := True;
+      AForm.chkMinimalAPI.Visible := True;
+      AForm.chkMinimalAPI.Checked := False;
       AForm.cbServerEngine.ItemIndex := 1; // Default Indy Direct for Custom
     end;
   end;

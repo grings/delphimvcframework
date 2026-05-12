@@ -25,19 +25,26 @@
 // Minimal API support for DMVCFramework. EXPERIMENTAL / PREVIEW.
 //
 // Lets you register routes via lambda handlers without declaring a
-// controller class:
+// controller class. Every route belongs to a TMVCRouteGroup: use
+// lEngine.Root for "no prefix, no group data, no filters" routes, or
+// lEngine.Prefix(...) for prefixed groups (with optional typed group data
+// and filter stack).
 //
-//   lEngine
+//   lEngine.Root
 //     .MapGet('/health',
 //       function: IMVCResponse
 //       begin
-//         Result := OkResponse('OK');
-//       end)
+//         Result := Ok('OK');
+//       end);
+//
+//   lEngine.Prefix('/api/v1')
+//     .Use(LoggingFilter())
+//     .Use(BearerAuthFilter())
 //     .MapPost<TPerson, IPeopleService>('/people',
 //       function (Person: TPerson; Svc: IPeopleService): IMVCResponse
 //       begin
 //         Svc.Create(Person);
-//         Result := CreatedResponse('', Person);
+//         Result := Created('', Person);
 //       end);
 //
 // Arguments are bound by type:
@@ -147,6 +154,12 @@ type
     fName: string;
     fMetadata: TDictionary<string, TValue>;
     fParamTypes: TArray<PTypeInfo>;
+    procedure SetName(const AValue: string);
+  private
+    // Back-reference to the registry the route belongs to. Used by SetName
+    // to enforce engine-wide uniqueness of operation names. Set in
+    // TMVCMinimalRegistry.Add right after construction.
+    fRegistry: TObject;
   public
     constructor Create(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk);
@@ -158,7 +171,9 @@ type
     property GroupDataTypeInfo: PTypeInfo read fGroupDataTypeInfo write fGroupDataTypeInfo;
     property Filters: TArray<TMVCEndpointFilter> read fFilters write fFilters;
     // Per-endpoint metadata for OpenAPI / introspection / auth policies.
-    property Name: string read fName write fName;
+    // Writing the Name goes through SetName, which rejects empty strings
+    // and raises EMVCMinimalAPI on duplicates across the engine.
+    property Name: string read fName write SetName;
     property Metadata: TDictionary<string, TValue> read fMetadata;
     // Type info for each generic handler parameter (T1, T2, T3, T4 in order).
     // Captured at registration time so OpenAPI emitter / introspection tools
@@ -167,8 +182,9 @@ type
   end;
 
   // Per-endpoint chainable configuration. Returned by MapXxx — wraps the
-  // just-registered route so the caller can apply WithName/WithMetadata/
-  // route-scoped Use without affecting the group.
+  // just-registered route so the caller can apply typed configuration
+  // (name, OpenAPI summary/description/tags/deprecated, response type)
+  // and route-scoped filters without affecting the group.
   TMVCRouteHandle = record
   strict private
     fRoute: TMVCMinimalRoute;
@@ -176,10 +192,20 @@ type
     constructor Create(ARoute: TMVCMinimalRoute);
     // Symbolic name for the endpoint. Useful for OpenAPI operationId,
     // URL generation, logs, route enumeration, ...
+    // Empty names and duplicate names across the engine raise
+    // EMVCMinimalAPI at registration time.
     function WithName(const AName: string): TMVCRouteHandle;
-    // Arbitrary key/value metadata. Consumed by future OpenAPI emitter,
-    // auth policies, observability tooling, etc.
-    function WithMetadata(const AKey: string; const AValue: TValue): TMVCRouteHandle;
+    // OpenAPI 3.x: one-line operation summary shown in Swagger UI.
+    function WithSummary(const ASummary: string): TMVCRouteHandle;
+    // OpenAPI 3.x: long-form operation description (Markdown allowed).
+    function WithDescription(const ADescription: string): TMVCRouteHandle;
+    // OpenAPI 3.x: tag(s) used by Swagger UI to group operations.
+    function WithTags(const ATag: string): TMVCRouteHandle; overload;
+    function WithTags(const ATags: TArray<string>): TMVCRouteHandle; overload;
+    // OpenAPI 3.x: marks the operation as deprecated.
+    function WithDeprecated(const AValue: Boolean = True): TMVCRouteHandle;
+    // OpenAPI 3.x: declares the schema of the 200 response body.
+    function Produces<T>: TMVCRouteHandle;
     // Route-scoped filter, appended after the group's filter stack.
     function Use(const AFilter: TMVCEndpointFilter): TMVCRouteHandle;
     // Escape hatch: access the underlying route.
@@ -286,11 +312,17 @@ type
     class function Create(AEngine: TMVCEngine; const APrefix: string;
       const AData: T): TMVCRouteGroup<T>; static;
 
-    // Nested grouping (same data type — extends the prefix, copies filters).
+    // Nested grouping. Returns a new group whose path is the concatenation
+    // of the parent prefix and APath; the parent's filter chain is
+    // inherited (same model as ASP.NET Core MapGroup / FastAPI
+    // include_router). Sub-groups CAN add more filters via Use(), they
+    // cannot drop the parent's.
     function Prefix(const APath: string): TMVCRouteGroup<T>; overload;
 
-    // Nested grouping with NEW typed group data. Filters are NOT inherited
-    // across type boundaries — re-apply them with Use() if needed.
+    // Same as above, with NEW typed group data. The data instance is
+    // bound to the engine's lifetime (freed at engine shutdown) unless
+    // AOwns is False. Filters still inherit — typed data is the only
+    // thing that changes across the boundary.
     function Prefix<U: class>(const APath: string; const AData: U;
       AOwns: Boolean = True): TMVCRouteGroup<U>; overload;
 
@@ -397,18 +429,26 @@ type
   end;
 
   // -------------------------------------------------------------------------
-  // Class helper extending TMVCEngine with MapGet/MapPost/MapPut/MapDelete/MapPatch.
+  // Class helper extending TMVCEngine with the entry points to the minimal
+  // API: Root (the top-level route group) and Prefix (a route group with a
+  // path prefix and optional typed data).
+  //
+  // All route registration goes through a TMVCRouteGroup — there is no
+  // shortcut on the engine itself. Use Root for "no prefix, no group data,
+  // no filters" routes; use Prefix for everything else. This keeps the
+  // engine surface small and makes the route-grouping model explicit in
+  // every call site.
+  //
+  //   lEngine.Root.MapGet('/health', ...);
+  //   lEngine.Prefix('/api/v1').Use(AuthFilter).MapGet('/users', ...);
   // -------------------------------------------------------------------------
 
   TMVCEngineMinimalAPIHelper = class helper for TMVCEngine
   strict private
     function GetOrCreateMiddleware: TMVCMinimalAPIMiddleware;
-    function MapInternal(AVerb: TMVCHTTPMethodType; const APath: string;
-      AThunk: TMVCMinimalThunk;
-      const AParamTypes: TArray<PTypeInfo>): TMVCEngine;
   public
+    // The top-level route group. Equivalent to Prefix('').
     function Root: TMVCRouteGroup<TObject>;
-
 
     // Open a route group with a path prefix. Without group data, T = TObject
     // and the data slot is nil (no group-data resolution happens in handlers).
@@ -423,68 +463,6 @@ type
     // Internal: wires a route into the registry from a TMVCRouteGroup<T>.
     function RegisterFromGroup(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
-
-    // Engine-level Map* (no prefix, no group data, no hooks)
-
-    // GET
-    function MapGet(const APath: string;
-      const AHandler: TMVCMinimalFunc): TMVCEngine; overload;
-    function MapGet<T1>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1>): TMVCEngine; overload;
-    function MapGet<T1, T2>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine; overload;
-    function MapGet<T1, T2, T3>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine; overload;
-    function MapGet<T1, T2, T3, T4>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine; overload;
-
-    // POST
-    function MapPost(const APath: string;
-      const AHandler: TMVCMinimalFunc): TMVCEngine; overload;
-    function MapPost<T1>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1>): TMVCEngine; overload;
-    function MapPost<T1, T2>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine; overload;
-    function MapPost<T1, T2, T3>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine; overload;
-    function MapPost<T1, T2, T3, T4>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine; overload;
-
-    // PUT
-    function MapPut(const APath: string;
-      const AHandler: TMVCMinimalFunc): TMVCEngine; overload;
-    function MapPut<T1>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1>): TMVCEngine; overload;
-    function MapPut<T1, T2>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine; overload;
-    function MapPut<T1, T2, T3>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine; overload;
-    function MapPut<T1, T2, T3, T4>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine; overload;
-
-    // DELETE
-    function MapDelete(const APath: string;
-      const AHandler: TMVCMinimalFunc): TMVCEngine; overload;
-    function MapDelete<T1>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1>): TMVCEngine; overload;
-    function MapDelete<T1, T2>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine; overload;
-    function MapDelete<T1, T2, T3>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine; overload;
-    function MapDelete<T1, T2, T3, T4>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine; overload;
-
-    // PATCH
-    function MapPatch(const APath: string;
-      const AHandler: TMVCMinimalFunc): TMVCEngine; overload;
-    function MapPatch<T1>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1>): TMVCEngine; overload;
-    function MapPatch<T1, T2>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine; overload;
-    function MapPatch<T1, T2, T3>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine; overload;
-    function MapPatch<T1, T2, T3, T4>(const APath: string;
-      const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine; overload;
   end;
 
 implementation
@@ -519,6 +497,24 @@ begin
   inherited;
 end;
 
+procedure TMVCMinimalRoute.SetName(const AValue: string);
+var
+  lOther: TMVCMinimalRoute;
+begin
+  if AValue = '' then
+    raise EMVCMinimalAPI.Create(http_status.InternalServerError,
+      'WithName: route name cannot be empty.');
+  if fRegistry <> nil then
+    for lOther in TMVCMinimalRegistry(fRegistry).AllRoutes do
+      if (lOther <> Self) and SameText(lOther.Name, AValue) then
+        raise EMVCMinimalAPI.CreateFmt(http_status.InternalServerError,
+          'WithName: duplicate route name "%s" (already used by %s %s). ' +
+          'Operation names must be unique across the engine.',
+          [AValue, GetEnumName(TypeInfo(TMVCHTTPMethodType), Ord(lOther.Verb)),
+           lOther.PathPattern]);
+  fName := AValue;
+end;
+
 { -------------------------------------------------------------------------- }
 { TMVCRouteHandle                                                            }
 { -------------------------------------------------------------------------- }
@@ -534,10 +530,40 @@ begin
   Result := Self;
 end;
 
-function TMVCRouteHandle.WithMetadata(const AKey: string;
-  const AValue: TValue): TMVCRouteHandle;
+function TMVCRouteHandle.WithSummary(const ASummary: string): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue(AKey, AValue);
+  fRoute.Metadata.AddOrSetValue('summary', TValue.From<string>(ASummary));
+  Result := Self;
+end;
+
+function TMVCRouteHandle.WithDescription(const ADescription: string): TMVCRouteHandle;
+begin
+  fRoute.Metadata.AddOrSetValue('description', TValue.From<string>(ADescription));
+  Result := Self;
+end;
+
+function TMVCRouteHandle.WithTags(const ATag: string): TMVCRouteHandle;
+begin
+  fRoute.Metadata.AddOrSetValue('tags', TValue.From<TArray<string>>([ATag]));
+  Result := Self;
+end;
+
+function TMVCRouteHandle.WithTags(const ATags: TArray<string>): TMVCRouteHandle;
+begin
+  fRoute.Metadata.AddOrSetValue('tags', TValue.From<TArray<string>>(ATags));
+  Result := Self;
+end;
+
+function TMVCRouteHandle.WithDeprecated(const AValue: Boolean): TMVCRouteHandle;
+begin
+  fRoute.Metadata.AddOrSetValue('deprecated', TValue.From<Boolean>(AValue));
+  Result := Self;
+end;
+
+function TMVCRouteHandle.Produces<T>: TMVCRouteHandle;
+begin
+  fRoute.Metadata.AddOrSetValue('produces.200',
+    TValue.From<PTypeInfo>(TypeInfo(T)));
   Result := Self;
 end;
 
@@ -577,6 +603,7 @@ function TMVCMinimalRegistry.Add(AVerb: TMVCHTTPMethodType;
   const APath: string; AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
 begin
   Result := TMVCMinimalRoute.Create(AVerb, APath, AThunk);
+  Result.fRegistry := Self;
   fRoutes.Add(Result);
 end;
 
@@ -1313,10 +1340,13 @@ begin
           TMVCRenderer.InternalRenderMVCResponse(lRenderer,
             TMVCResponse(lResp as TObject));
       except
-        on E: EMVCValidationException do
-          // Validation failures get the standard ProblemDetails 400 envelope.
-          RenderExceptionAsProblem(lRenderer, AContext,
-            http_status.BadRequest, 'Validation failed', E);
+        // Validation failures (EMVCValidationException) carry 422 from
+        // their constructor and fall through to the EMVCException handler
+        // below, which respects the exception's own status. 422
+        // (Unprocessable Entity, RFC 4918) is the right code: the request
+        // was syntactically well-formed JSON but failed semantic validation
+        // — distinct from 400 (Bad Request) used for parse / binding
+        // failures (EMVCMinimalAPI).
         on E: EMVCException do
           RenderExceptionAsProblem(lRenderer, AContext,
             E.HTTPStatusCode, ReasonPhraseFor(E.HTTPStatusCode), E);
@@ -1391,18 +1421,6 @@ begin
   end;
 end;
 
-function TMVCEngineMinimalAPIHelper.MapInternal(AVerb: TMVCHTTPMethodType;
-  const APath: string; AThunk: TMVCMinimalThunk;
-  const AParamTypes: TArray<PTypeInfo>): TMVCEngine;
-var
-  lRoute: TMVCMinimalRoute;
-begin
-  lRoute := GetOrCreateMiddleware.Registry.Add(AVerb, APath, AThunk);
-  if Length(AParamTypes) > 0 then
-    lRoute.ParamTypes := AParamTypes;
-  Result := Self;
-end;
-
 function TMVCEngineMinimalAPIHelper.RegisterFromGroup(AVerb: TMVCHTTPMethodType;
   const APath: string; AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
 begin
@@ -1432,161 +1450,6 @@ begin
   if AOwns and (AData <> nil) then
     lMW.Registry.TrackOwned(AData);
   Result := TMVCRouteGroup<T>.Create(Self, APrefix, AData);
-end;
-
-// ------------------ GET ------------------
-function TMVCEngineMinimalAPIHelper.MapGet(const APath: string;
-  const AHandler: TMVCMinimalFunc): TMVCEngine;
-begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make0(AHandler), nil);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapGet<T1>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
-begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapGet<T1, T2>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
-begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapGet<T1, T2, T3>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
-begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapGet<T1, T2, T3, T4>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
-begin
-  Result := MapInternal(httpGET, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
-end;
-
-// ------------------ POST ------------------
-function TMVCEngineMinimalAPIHelper.MapPost(const APath: string;
-  const AHandler: TMVCMinimalFunc): TMVCEngine;
-begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make0(AHandler), nil);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPost<T1>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
-begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPost<T1, T2>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
-begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPost<T1, T2, T3>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
-begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPost<T1, T2, T3, T4>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
-begin
-  Result := MapInternal(httpPOST, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
-end;
-
-// ------------------ PUT ------------------
-function TMVCEngineMinimalAPIHelper.MapPut(const APath: string;
-  const AHandler: TMVCMinimalFunc): TMVCEngine;
-begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make0(AHandler), nil);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPut<T1>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
-begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPut<T1, T2>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
-begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPut<T1, T2, T3>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
-begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPut<T1, T2, T3, T4>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
-begin
-  Result := MapInternal(httpPUT, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
-end;
-
-// ------------------ DELETE ------------------
-function TMVCEngineMinimalAPIHelper.MapDelete(const APath: string;
-  const AHandler: TMVCMinimalFunc): TMVCEngine;
-begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make0(AHandler), nil);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapDelete<T1>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
-begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapDelete<T1, T2>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
-begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapDelete<T1, T2, T3>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
-begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapDelete<T1, T2, T3, T4>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
-begin
-  Result := MapInternal(httpDELETE, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
-end;
-
-// ------------------ PATCH ------------------
-function TMVCEngineMinimalAPIHelper.MapPatch(const APath: string;
-  const AHandler: TMVCMinimalFunc): TMVCEngine;
-begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make0(AHandler), nil);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPatch<T1>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1>): TMVCEngine;
-begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make1<T1>(AHandler), [TypeInfo(T1)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPatch<T1, T2>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2>): TMVCEngine;
-begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make2<T1, T2>(AHandler), [TypeInfo(T1), TypeInfo(T2)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPatch<T1, T2, T3>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3>): TMVCEngine;
-begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make3<T1, T2, T3>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3)]);
-end;
-
-function TMVCEngineMinimalAPIHelper.MapPatch<T1, T2, T3, T4>(const APath: string;
-  const AHandler: TMVCMinimalFunc<T1, T2, T3, T4>): TMVCEngine;
-begin
-  Result := MapInternal(httpPATCH, APath, TMVCThunkFactory.Make4<T1, T2, T3, T4>(AHandler), [TypeInfo(T1), TypeInfo(T2), TypeInfo(T3), TypeInfo(T4)]);
 end;
 
 { -------------------------------------------------------------------------- }
@@ -1626,11 +1489,17 @@ end;
 
 function TMVCRouteGroup<T>.Prefix<U>(const APath: string; const AData: U;
   AOwns: Boolean): TMVCRouteGroup<U>;
+var
+  lFilter: TMVCEndpointFilter;
 begin
-  // Delegate to the engine helper so the new typed data lands in the
-  // owned-data list. Hooks intentionally not propagated across type
-  // boundaries — apply them on the returned group if needed.
+  // Filters propagate across the type boundary: TMVCEndpointFilter is not
+  // parametric on T, so the chain carries trivially. Matches the model of
+  // ASP.NET Core MapGroup and FastAPI include_router: cross-cutting
+  // concerns (logging, auth, rate-limit) added on a parent group are seen
+  // by every nested route, regardless of whether the typed data changed.
   Result := fEngine.Prefix<U>(fPrefix + APath, AData, AOwns);
+  for lFilter in fFilters do
+    Result := Result.Use(lFilter);
 end;
 
 // ----- endpoint filter ----------------------------------------------------

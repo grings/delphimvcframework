@@ -92,6 +92,9 @@ type
     // tsAppType controls
     rgApplicationType: TRadioGroup;
     lblAppTypeDescription: TLabel;
+    gbApiStyle: TGroupBox;
+    chkMinimalAPI: TCheckBox;
+    lblApiStyleDescription: TLabel;
     // tsServer controls
     rgServerProtocol: TRadioGroup;
     lblServerPort: TLabel;
@@ -178,6 +181,7 @@ type
     procedure chkCreateSubfolderClick(Sender: TObject);
     procedure rgLoggingProfileClick(Sender: TObject);
     procedure chkLogExeWatchClick(Sender: TObject);
+    procedure chkMinimalAPIClick(Sender: TObject);
   private
     fModel: TJsonObject;
     fCurrentPage: Integer;
@@ -801,6 +805,23 @@ begin
   chkLogExeWatch.Enabled := lEnableAppenders;
 end;
 
+procedure TfrmDMVCNewProject.chkMinimalAPIClick(Sender: TObject);
+begin
+  // Minimal API mode emits a RoutesU.pas with lambda routes instead of a
+  // controller class, so the controller-class options become irrelevant.
+  // CRUD checkbox stays enabled — it now means "generate the CRUD sample
+  // lambdas" instead of "controller CRUD methods".
+  chkCreateIndexMethod.Enabled := not chkMinimalAPI.Checked;
+  chkCreateActionFiltersMethods.Enabled := not chkMinimalAPI.Checked;
+  chkProfileActions.Enabled := not chkMinimalAPI.Checked;
+  if chkMinimalAPI.Checked then
+  begin
+    chkCreateIndexMethod.Checked := False;
+    chkCreateActionFiltersMethods.Checked := False;
+    chkProfileActions.Checked := False;
+  end;
+end;
+
 procedure TfrmDMVCNewProject.chkLogExeWatchClick(Sender: TObject);
 var
   LDlg: TTaskDialog;
@@ -1053,6 +1074,7 @@ begin
   else
     fModel.S[TConfigKey.default_media_type] := 'TMVCConstants.DEFAULT_CONTENT_TYPE';
   fModel.B[TConfigKey.program_service_container_generate] := chkServicesContainer.Checked;
+  fModel.B[TConfigKey.program_minimal_api] := chkMinimalAPI.Checked;
   fModel.S[TConfigKey.program_service_container_unit_name] := 'TBA';
   fModel.S[TConfigKey.controller_unit_name] := 'TBA';
   fModel.S[TConfigKey.controller_classname] := GetControllerClassName;

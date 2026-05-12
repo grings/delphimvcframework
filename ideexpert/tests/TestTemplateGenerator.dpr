@@ -49,6 +49,7 @@ type
     program_server_protocol = 'program.server.protocol';
     program_service_container_generate = 'program.service.container.generate';
     program_service_container_unit_name = 'program.service.container.unit_name';
+    program_minimal_api = 'program.minimal_api';
     mustache_helpers_unit_name = 'mustache.helpers_unit_name';
     templatepro_helpers_unit_name = 'templatepro.helpers_unit_name';
     webstencils_helpers_unit_name = 'webstencils.helpers_unit_name';
@@ -374,6 +375,7 @@ begin
   Result.S[TConfigKey.program_server_protocol] := 'http';  // http or https
   Result.B[TConfigKey.program_service_container_generate] := False;
   Result.S[TConfigKey.program_service_container_unit_name] := 'ServicesU';
+  Result.B[TConfigKey.program_minimal_api] := False;
 
   // Controller defaults
   Result.S[TConfigKey.controller_unit_name] := 'Controllers.HomeU';
@@ -634,12 +636,21 @@ begin
     LSource := TTestTemplateEngine.Render('boot_config.pas.tpro', AConfig);
     TFile.WriteAllText(TPath.Combine(AOutputDir, 'BootConfigU.pas'), LSource);
 
-    // Generate dedicated People controller when CRUD is enabled
+    // Generate CRUD sample: controller class (default) or lambda-route unit (Minimal API).
     if AConfig.B[TConfigKey.controller_crud_methods_generate] then
     begin
-      LogVerbose('Generating Controllers.PeopleU...');
-      LSource := TTestTemplateEngine.Render('controller_people.pas.tpro', AConfig);
-      TFile.WriteAllText(TPath.Combine(AOutputDir, 'Controllers.PeopleU.pas'), LSource);
+      if AConfig.B[TConfigKey.program_minimal_api] then
+      begin
+        LogVerbose('Generating RoutesU (Minimal API)...');
+        LSource := TTestTemplateEngine.Render('routes_minimal.pas.tpro', AConfig);
+        TFile.WriteAllText(TPath.Combine(AOutputDir, 'RoutesU.pas'), LSource);
+      end
+      else
+      begin
+        LogVerbose('Generating Controllers.PeopleU...');
+        LSource := TTestTemplateEngine.Render('controller_people.pas.tpro', AConfig);
+        TFile.WriteAllText(TPath.Combine(AOutputDir, 'Controllers.PeopleU.pas'), LSource);
+      end;
     end;
 
     // WebModule only for WebBroker non-console cases (ISAPI, Apache, Windows Service, FastCGI).
@@ -1415,6 +1426,58 @@ begin
   LTestCase.Config.B[TConfigKey.entity_generate] := True;
   LTestCase.Config.B[TConfigKey.webmodule_middleware_cors] := True;
   LTestCase.Config.B[TConfigKey.webmodule_middleware_activerecord] := True;
+  ATestCases.Add(LTestCase);
+
+  // === Minimal API tests (Indy Direct / HTTP.sys / WebBroker console) ===
+
+  // Test 49: Indy Direct + Minimal API + CRUD
+  LTestCase.Name := 'indydirect_minimal_api';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'indydirect';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.INDY_DIRECT;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  // Minimal mode disables index/action-filters/profile; main controller is skipped.
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
+  ATestCases.Add(LTestCase);
+
+  // Test 50: HTTP.sys + Minimal API + CRUD
+  LTestCase.Name := 'httpsys_minimal_api';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'httpsys';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.HTTPSYS;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
+  ATestCases.Add(LTestCase);
+
+  // Test 51: WebBroker console + Minimal API + CRUD
+  LTestCase.Name := 'webbroker_minimal_api';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'webbroker';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.HTTP_CONSOLE;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
+  ATestCases.Add(LTestCase);
+
+  // Test 52: Indy Direct + Minimal API + CRUD + Service Container
+  LTestCase.Name := 'indydirect_minimal_api_services';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'indydirect';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.INDY_DIRECT;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_service_container_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
   ATestCases.Add(LTestCase);
 end;
 

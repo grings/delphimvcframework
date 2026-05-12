@@ -14,7 +14,6 @@ uses
   MVCFramework.Serializer.Commons,
   MVCFramework.Validation,
   MVCFramework.Validators,
-  MVCFramework.Validators.CrossField,
   MVCFramework.ValidationEngine;
 
 type

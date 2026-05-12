@@ -18,6 +18,9 @@ uses
   MVCFramework.Signal,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
+{{if program_minimal_api}}
+  MVCFramework.MinimalAPI,
+{{endif}}
 {{if program_ssv_mustache}}
   MVCFramework.View.Renderers.Mustache,
   mormot.core.mustache,
@@ -32,7 +35,11 @@ uses
   Controllers.APIU in 'Controllers.APIU.pas',
 {{endif}}
 {{if controller_crud_methods_generate}}
+{{if program_minimal_api}}
+  RoutesU in 'RoutesU.pas',
+{{else}}
   Controllers.PeopleU in 'Controllers.PeopleU.pas',
+{{endif}}
 {{endif}}
 {{if entity_generate}}
   {{:entity_unit_name}} in '{{:entity_unit_name}}.pas',
@@ -102,14 +109,17 @@ begin
     end);
   try
     ConfigureEngine(LEngine);
+{{if program_minimal_api}}
+    // Routes are intentionally separated from ConfigureEngine: this is the
+    // single line a developer scans first to find/edit URL handlers.
+    ConfigureRoutes(LEngine.Root);
+{{endif}}
     LServer := TMVCServerFactory.CreateHttpSys(LEngine);
 {{if program_server_protocol|eq,"https"}}
     LServer.UseHTTPS := True;
 {{endif}}
-    LServer.Listen(APort, 'localhost');
-    LogI('Listening on ' + SCHEME + '://localhost:' + APort.ToString);
-    LogI('Server type: Windows HTTP.sys (kernel-mode IOCP)');
-    LogI('');
+    LogI('Starting on ' + SCHEME + '://localhost:' + APort.ToString +
+      ' (Windows HTTP.sys, kernel-mode IOCP). Press Ctrl+C to shut down.');
 {{if program_server_protocol|eq,"https"}}
     LogI('NOTE: HTTPS requires both URL ACL and SSL cert bound via netsh:');
     LogI('  netsh http add urlacl url=https://+:' + APort.ToString + '/ user=Everyone');
@@ -119,10 +129,9 @@ begin
     LogI('NOTE: If you get error 5 (Access Denied), run as Administrator or execute:');
     LogI('  netsh http add urlacl url=http://localhost:' + APort.ToString + '/ user=Everyone');
 {{endif}}
-    LogI('Application started. Press Ctrl+C to shut down.');
-    WaitForTerminationSignal;
-    EnterInShutdownState;
-    LServer.Stop;
+    // RunAndWait: Listen + WaitForTerminationSignal + EnterInShutdownState +
+    // Stop. Console-only. For VCL/FMX/test hosts use Listen() + Stop().
+    LServer.RunAndWait(APort, 'localhost');
     LServer := nil;
   finally
     LEngine.Free;

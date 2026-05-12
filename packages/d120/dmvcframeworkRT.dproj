@@ -235,7 +235,6 @@
         <DCCReference Include="..\..\sources\MVCFramework.Validation.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.ValidationEngine.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Validators.pas"/>
-        <DCCReference Include="..\..\sources\MVCFramework.Validators.CrossField.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Serializer.Streaming.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.WebBroker.Request.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.WebBroker.Response.pas"/>

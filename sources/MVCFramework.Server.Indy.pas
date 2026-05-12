@@ -94,6 +94,7 @@ type
     destructor Destroy; override;
     procedure Listen(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     procedure Stop;
+    procedure RunAndWait(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     function IsRunning: Boolean;
     /// <summary>
     /// Exposes the underlying TIdHTTPServer for advanced Indy-specific
@@ -107,7 +108,7 @@ implementation
 
 uses
   MVCFramework.Indy.Request, MVCFramework.Indy.Response,
-  MVCFramework.Logger;
+  MVCFramework.Logger, MVCFramework.Signal;
 
 { TMVCIndyServer }
 
@@ -176,6 +177,17 @@ end;
 procedure TMVCIndyServer.Stop;
 begin
   FHTTPServer.Active := False;
+end;
+
+procedure TMVCIndyServer.RunAndWait(APort: Integer; const AHost: string);
+begin
+  Listen(APort, AHost);
+  try
+    WaitForTerminationSignal;
+    EnterInShutdownState;
+  finally
+    Stop;
+  end;
 end;
 
 function TMVCIndyServer.IsRunning: Boolean;

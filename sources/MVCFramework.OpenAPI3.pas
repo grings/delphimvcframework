@@ -28,9 +28,10 @@
 // pluggable IMVCOpenAPISource implementations. Two built-in sources:
 //
 //   * TMVCMinimalAPIOpenAPISource — inspects routes registered via
-//     TMVCEngine.MapGet/MapPost/.../Prefix(...) (the Minimal API surface).
+//     TMVCEngine.Root / TMVCEngine.Prefix(...) (the Minimal API surface).
 //     Reads handler parameter types, route constraints, group data, and
-//     per-endpoint Metadata (WithName/WithMetadata).
+//     per-endpoint typed configuration (WithName / WithSummary /
+//     WithDescription / WithTags / WithDeprecated / Produces<T>).
 //
 //   * TMVCControllerOpenAPISource — inspects controllers registered on the
 //     engine via RTTI. Reads MVCPath/MVCHTTPMethod/MVCSwag* attributes.

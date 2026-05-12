@@ -50,6 +50,21 @@ type
     function GetEngine: TMVCEngine;
     procedure Listen(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     procedure Stop;
+    /// <summary>
+    /// One-shot lifecycle for CONSOLE applications: calls Listen, blocks
+    /// the calling thread until a termination signal arrives (Ctrl+C,
+    /// SIGTERM), then calls Stop. Equivalent to:
+    ///   Self.Listen(APort, AHost);
+    ///   try WaitForTerminationSignal; finally Self.Stop; end;
+    ///
+    /// DO NOT call RunAndWait from a VCL/FMX form, an IDE expert, a
+    /// unit-test fixture or any host where the main thread already runs
+    /// a message loop or is otherwise owned — it will deadlock the host.
+    /// In those cases call Listen() (non-blocking) to start the server
+    /// and Stop() to shut it down; the host's own lifecycle governs
+    /// when each runs.
+    /// </summary>
+    procedure RunAndWait(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     function IsRunning: Boolean;
     function GetPort: Integer;
     function GetHost: string;

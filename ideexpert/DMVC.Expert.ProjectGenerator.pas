@@ -463,11 +463,16 @@ begin
     SaveFile(CONTROLLER_API_UNIT + '.pas',
       RenderTemplate('controller_api.pas.tpro', AConfig));
 
-  // Dedicated People controller (split out of the main controller unit so CRUD
-  // samples follow the idiomatic "one controller per resource" pattern).
+  // CRUD sample: controller class (default) or lambda-route unit (Minimal API).
   if AConfig.B[TConfigKey.controller_crud_methods_generate] then
-    SaveFile(CONTROLLER_PEOPLE_UNIT + '.pas',
-      RenderTemplate('controller_people.pas.tpro', AConfig));
+  begin
+    if AConfig.B[TConfigKey.program_minimal_api] then
+      SaveFile('RoutesU.pas',
+        RenderTemplate('routes_minimal.pas.tpro', AConfig))
+    else
+      SaveFile(CONTROLLER_PEOPLE_UNIT + '.pas',
+        RenderTemplate('controller_people.pas.tpro', AConfig));
+  end;
 
   // WebModule only for WebBroker non-console cases (ISAPI, Apache, Windows Service, FastCGI).
   // Console WebBroker uses EngineConfigU + TMVCServerFactory.CreateWebBroker instead.

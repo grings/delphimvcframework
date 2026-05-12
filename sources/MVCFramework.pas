@@ -1418,6 +1418,49 @@ function BadRequest: IMVCResponse; overload;
 function BadRequest(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
 function BadRequest(const Message: string): IMVCResponse; overload;
 
+function Unauthorized: IMVCResponse; overload;
+function Unauthorized(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function Unauthorized(const Message: string): IMVCResponse; overload;
+
+function Forbidden: IMVCResponse; overload;
+function Forbidden(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function Forbidden(const Message: string): IMVCResponse; overload;
+
+function Conflict: IMVCResponse; overload;
+function Conflict(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function Conflict(const Message: string): IMVCResponse; overload;
+
+function UnsupportedMediaType: IMVCResponse; overload;
+function UnsupportedMediaType(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function UnsupportedMediaType(const Message: string): IMVCResponse; overload;
+
+function UnprocessableEntity: IMVCResponse; overload;
+function UnprocessableEntity(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function UnprocessableEntity(const Message: string): IMVCResponse; overload;
+
+function InternalServerError: IMVCResponse; overload;
+function InternalServerError(const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+function InternalServerError(const Message: string): IMVCResponse; overload;
+
+function Accepted(const Location: string = ''; const Message: string = ''): IMVCResponse; overload;
+function Accepted(const Location: string; const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
+
+function NotModified: IMVCResponse;
+
+// Redirect responses.
+//   Default: 302 Found (browsers may switch to GET on the new location —
+//   the long-standing legacy behavior).
+//
+// Permanent / PreserveMethod combinations:
+//   (False, False) -> 302 Found             temporary, method MAY change
+//   (False, True ) -> 307 Temporary Redirect temporary, method MUST be preserved
+//   (True,  False) -> 301 Moved Permanently  permanent, method MAY change
+//   (True,  True ) -> 308 Permanent Redirect permanent, method MUST be preserved
+function Redirect(const Location: string): IMVCResponse; overload;
+function Redirect(const Location: string; const Permanent: Boolean;
+  const PreserveMethod: Boolean = False): IMVCResponse; overload;
+function Redirect(const Location: string; const StatusCode: Word): IMVCResponse; overload;
+
 function Status(const StatusCode: Word): IMVCResponse; overload;
 function Status(const StatusCode: Word; const Message: string): IMVCResponse; overload;
 function Status(const StatusCode: Word; const Body: TObject; const Owns: Boolean = True): IMVCResponse; overload;
@@ -4291,31 +4334,32 @@ end;
 
 function TMVCRenderer.RedirectResponse(Location: String; Permanent: Boolean = False; PreserveMethod: Boolean = False): IMVCResponse;
 var
-  lBuilder: IMVCResponseBuilder;
+  lStatus: Word;
 begin
-  lBuilder := MVCResponseBuilder.Header('location', Location);
+  // Permanent / PreserveMethod -> HTTP status:
+  //   (False, False) -> 302 Found             temporary, method MAY change
+  //   (False, True ) -> 307 Temporary Redirect temporary, method preserved
+  //   (True,  False) -> 301 Moved Permanently  permanent, method MAY change
+  //   (True,  True ) -> 308 Permanent Redirect permanent, method preserved
+
   if Permanent then
   begin
     if PreserveMethod then
-    begin
-      Result := lBuilder.StatusCode(HTTP_STATUS.TemporaryRedirect).Build;
-    end
+      lStatus := HTTP_STATUS.PermanentRedirect
     else
-    begin
-      Result := lBuilder.StatusCode(HTTP_STATUS.MovedPermanently).Build;
-    end;
+      lStatus := HTTP_STATUS.MovedPermanently;
   end
   else
   begin
     if PreserveMethod then
-    begin
-      Result := lBuilder.StatusCode(HTTP_STATUS.PermanentRedirect).Build;
-    end
+      lStatus := HTTP_STATUS.TemporaryRedirect
     else
-    begin
-      Result := lBuilder.StatusCode(HTTP_STATUS.Found).Build;
-    end;
+      lStatus := HTTP_STATUS.Found;
   end;
+  Result := MVCResponseBuilder
+    .StatusCode(lStatus)
+    .Header('location', Location)
+    .Build;
 end;
 
 function TMVCRenderer.InternalServerErrorResponse: IMVCResponse;
@@ -5535,6 +5579,160 @@ end;
 function BadRequest(const Message: string): IMVCResponse;
 begin
   Result := Status(http_status.BadRequest, Message);
+end;
+
+function Unauthorized: IMVCResponse;
+begin
+  Result := Status(http_status.Unauthorized);
+end;
+
+function Unauthorized(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.Unauthorized, Body, Owns);
+end;
+
+function Unauthorized(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.Unauthorized, Message);
+end;
+
+function Forbidden: IMVCResponse;
+begin
+  Result := Status(http_status.Forbidden);
+end;
+
+function Forbidden(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.Forbidden, Body, Owns);
+end;
+
+function Forbidden(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.Forbidden, Message);
+end;
+
+function Conflict: IMVCResponse;
+begin
+  Result := Status(http_status.Conflict);
+end;
+
+function Conflict(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.Conflict, Body, Owns);
+end;
+
+function Conflict(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.Conflict, Message);
+end;
+
+function UnsupportedMediaType: IMVCResponse;
+begin
+  Result := Status(http_status.UnsupportedMediaType);
+end;
+
+function UnsupportedMediaType(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.UnsupportedMediaType, Body, Owns);
+end;
+
+function UnsupportedMediaType(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.UnsupportedMediaType, Message);
+end;
+
+function UnprocessableEntity: IMVCResponse;
+begin
+  Result := Status(http_status.UnprocessableEntity);
+end;
+
+function UnprocessableEntity(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.UnprocessableEntity, Body, Owns);
+end;
+
+function UnprocessableEntity(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.UnprocessableEntity, Message);
+end;
+
+function InternalServerError: IMVCResponse;
+begin
+  Result := Status(http_status.InternalServerError);
+end;
+
+function InternalServerError(const Body: TObject; const Owns: Boolean): IMVCResponse;
+begin
+  Result := Status(http_status.InternalServerError, Body, Owns);
+end;
+
+function InternalServerError(const Message: string): IMVCResponse;
+begin
+  Result := Status(http_status.InternalServerError, Message);
+end;
+
+function Accepted(const Location: string; const Message: string): IMVCResponse;
+var
+  lBuilder: IMVCResponseBuilder;
+begin
+  lBuilder := MVCResponseBuilder.StatusCode(http_status.Accepted);
+  if Location <> '' then
+    lBuilder.Header('location', Location);
+  if Message <> '' then
+    lBuilder.Body(Message);
+  Result := lBuilder.Build;
+end;
+
+function Accepted(const Location: string; const Body: TObject;
+  const Owns: Boolean): IMVCResponse;
+var
+  lBuilder: IMVCResponseBuilder;
+begin
+  lBuilder := MVCResponseBuilder.StatusCode(http_status.Accepted);
+  if Location <> '' then
+    lBuilder.Header('location', Location);
+  lBuilder.Body(Body, Owns);
+  Result := lBuilder.Build;
+end;
+
+function NotModified: IMVCResponse;
+begin
+  Result := Status(http_status.NotModified);
+end;
+
+function Redirect(const Location: string): IMVCResponse;
+begin
+  Result := Redirect(Location, http_status.Found);
+end;
+
+function Redirect(const Location: string; const Permanent: Boolean;
+  const PreserveMethod: Boolean): IMVCResponse;
+var
+  lStatus: Word;
+begin
+  if Permanent then
+  begin
+    if PreserveMethod then
+      lStatus := http_status.PermanentRedirect    // 308: permanent + method preserved
+    else
+      lStatus := http_status.MovedPermanently;    // 301: permanent + method may change
+  end
+  else
+  begin
+    if PreserveMethod then
+      lStatus := http_status.TemporaryRedirect    // 307: temporary + method preserved
+    else
+      lStatus := http_status.Found;               // 302: temporary + method may change
+  end;
+  Result := Redirect(Location, lStatus);
+end;
+
+function Redirect(const Location: string; const StatusCode: Word): IMVCResponse;
+begin
+  Result := MVCResponseBuilder
+    .StatusCode(StatusCode)
+    .Header('location', Location)
+    .Build;
 end;
 
 function ProblemDetails(const StatusCode: Word; const Title: string;

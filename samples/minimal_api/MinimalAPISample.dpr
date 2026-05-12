@@ -62,7 +62,6 @@ uses
   MVCFramework.Commons,
   MVCFramework.Logger,
   MVCFramework.Container,
-  MVCFramework.Signal,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
   MVCFramework.MinimalAPI in '..\..\sources\MVCFramework.MinimalAPI.pas',
@@ -87,7 +86,6 @@ end;
 procedure RunServer;
 var
   lEngine: TMVCEngine;
-  lServer: IMVCServer;
   lOAInfo: TMVCOpenAPIInfo;
 begin
   WriteLn('** DMVCFramework Minimal API Sample (PREVIEW) **');
@@ -114,31 +112,24 @@ begin
     lOAInfo.LicenseName := 'Apache-2.0';
     lEngine.AddMiddleware(TMVCOpenAPI3Middleware.Create(lEngine, lOAInfo));
 
-    lServer := TMVCServerFactory.CreateIndyDirect(lEngine);
-    lServer.Listen(PORT);
-    try
-      WriteLn(Format('Server started on http://localhost:%d (Indy Direct)', [PORT]));
-      WriteLn;
-      WriteLn('Try:');
-      WriteLn('  GET    /openapi.json     <-- OpenAPI 3.1 spec');
-      WriteLn('  GET    /health');
-      WriteLn('  GET    /v1/people');
-      WriteLn('  GET    /v2/people');
-      WriteLn('  GET    /v2/people/1');
-      WriteLn('  POST   /v2/people  {"firstName":"Mario","lastName":"Rossi","age":30}');
-      WriteLn('  PUT    /v2/people/1');
-      WriteLn('  DELETE /v2/people/2');
-      WriteLn('  GET    /v2/admin/stats   (Header: X-Admin-Key: s3cret)');
-      WriteLn('  GET    /search?page=2&pageSize=10   (Header: X-Tenant: acme)');
-      WriteLn('  GET    /v1/error    -> demonstrates OnError handler');
-      WriteLn;
-      WriteLn('Press Ctrl+C to stop.');
-      WaitForTerminationSignal;
-      WriteLn('Shutting down...');
-    finally
-      lServer.Stop;
-      lServer := nil;
-    end;
+    WriteLn(Format('Server starting on http://localhost:%d (Indy Direct)', [PORT]));
+    WriteLn;
+    WriteLn('Try:');
+    WriteLn('  GET    /openapi.json     <-- OpenAPI 3.1 spec');
+    WriteLn('  GET    /health');
+    WriteLn('  GET    /v1/people');
+    WriteLn('  GET    /v2/people');
+    WriteLn('  GET    /v2/people/1');
+    WriteLn('  POST   /v2/people  {"firstName":"Mario","lastName":"Rossi","age":30}');
+    WriteLn('  PUT    /v2/people/1');
+    WriteLn('  DELETE /v2/people/2');
+    WriteLn('  GET    /v2/admin/stats   (Header: X-Admin-Key: s3cret)');
+    WriteLn('  GET    /search?page=2&pageSize=10   (Header: X-Tenant: acme)');
+    WriteLn('  GET    /v1/error    -> demonstrates OnError handler');
+    WriteLn;
+    WriteLn('Press Ctrl+C to stop.');
+    TMVCServerFactory.CreateIndyDirect(lEngine).RunAndWait(PORT);
+    WriteLn('Shutting down...');
   finally
     lEngine.Free;
   end;

@@ -71,6 +71,10 @@ type
       program_type = 'program.type'; //http.console, fastcgi.console, apache, isapi
       program_service_container_generate = 'program.service.container.generate';
       program_service_container_unit_name = 'program.service.container.unit_name';
+      // When True, the wizard emits a RoutesU.pas with lambda-based routes
+      // (Minimal API style) instead of a Controllers.*Controller class.
+      // Default False — pre-3.5 controller-based output is unchanged.
+      program_minimal_api = 'program.minimal_api';
       mustache_helpers_unit_name = 'mustache.helpers_unit_name';
       templatepro_helpers_unit_name = 'templatepro.helpers_unit_name';
       webstencils_helpers_unit_name = 'webstencils.helpers_unit_name';

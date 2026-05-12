@@ -42,7 +42,6 @@ uses
   MVCFramework,
   MVCFramework.Commons,
   MVCFramework.Logger,
-  MVCFramework.Signal,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
   MVCFramework.MinimalAPI in '..\..\sources\MVCFramework.MinimalAPI.pas',
@@ -57,7 +56,6 @@ const
 procedure RunServer;
 var
   lEngine: TMVCEngine;
-  lServer: IMVCServer;
 begin
   WriteLn('** DMVCFramework Minimal API Auth + Logging Sample **');
   WriteLn;
@@ -68,26 +66,19 @@ begin
       Config[TMVCConfigKey.DefaultContentType] := TMVCMediaType.APPLICATION_JSON;
     end);
   try
-    ConfigureRoutes(lEngine.Prefix(''));
+    ConfigureRoutes(lEngine.Root);
 
-    lServer := TMVCServerFactory.CreateIndyDirect(lEngine);
-    lServer.Listen(PORT);
-    try
-      WriteLn(Format('Server started on http://localhost:%d', [PORT]));
-      WriteLn;
-      WriteLn('Try:');
-      WriteLn('  curl http://localhost:8081/health');
-      WriteLn('  curl http://localhost:8081/api/me');
-      WriteLn('  curl http://localhost:8081/api/me -H "Authorization: Bearer alice-token"');
-      WriteLn('  curl http://localhost:8081/api/admin/audit -H "Authorization: Bearer bob-token"');
-      WriteLn;
-      WriteLn('Press Ctrl+C to stop.');
-      WaitForTerminationSignal;
-      WriteLn('Shutting down...');
-    finally
-      lServer.Stop;
-      lServer := nil;
-    end;
+    WriteLn(Format('Server starting on http://localhost:%d', [PORT]));
+    WriteLn;
+    WriteLn('Try:');
+    WriteLn('  curl http://localhost:8081/health');
+    WriteLn('  curl http://localhost:8081/api/me');
+    WriteLn('  curl http://localhost:8081/api/me -H "Authorization: Bearer alice-token"');
+    WriteLn('  curl http://localhost:8081/api/admin/audit -H "Authorization: Bearer bob-token"');
+    WriteLn;
+    WriteLn('Press Ctrl+C to stop.');
+    TMVCServerFactory.CreateIndyDirect(lEngine).RunAndWait(PORT);
+    WriteLn('Shutting down...');
   finally
     lEngine.Free;
   end;

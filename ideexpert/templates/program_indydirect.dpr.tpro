@@ -14,6 +14,9 @@ uses
   MVCFramework.Signal,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
+{{if program_minimal_api}}
+  MVCFramework.MinimalAPI,
+{{endif}}
 {{if program_server_protocol|eq,"https"}}
   MVCFramework.Server.HTTPS.TaurusTLS,
 {{endif}}
@@ -35,7 +38,11 @@ uses
   Controllers.APIU in 'Controllers.APIU.pas',
 {{endif}}
 {{if controller_crud_methods_generate}}
+{{if program_minimal_api}}
+  RoutesU in 'RoutesU.pas',
+{{else}}
   Controllers.PeopleU in 'Controllers.PeopleU.pas',
+{{endif}}
 {{endif}}
 {{if entity_generate}}
   {{:entity_unit_name}} in '{{:entity_unit_name}}.pas',
@@ -104,6 +111,11 @@ begin
     end);
   try
     ConfigureEngine(LEngine);
+{{if program_minimal_api}}
+    // Routes are intentionally separated from ConfigureEngine: this is the
+    // single line a developer scans first to find/edit URL handlers.
+    ConfigureRoutes(LEngine.Root);
+{{endif}}
     LServer := TMVCServerFactory.CreateIndyDirect(LEngine);
 {{if program_server_protocol|eq,"https"}}
     // -----------------------------------------------------------------
@@ -117,31 +129,29 @@ begin
     LServer.CertFile := dotEnv.Env('https.cert.cacert', 'certificates\localhost.crt');
     LServer.KeyFile := dotEnv.Env('https.cert.privkey', 'certificates\localhost.key');
     LServer.CertPassword := dotEnv.Env('https.cert.password', '');
-    LServer.Listen(APort);
-    LogI('Listening on https://localhost:' + APort.ToString);
-    LogI('Server type: Indy Direct + TaurusTLS (HTTPS)');
+    LogI('Starting on https://localhost:' + APort.ToString +
+      ' (Indy Direct + TaurusTLS). Press Ctrl+C to shut down.');
 {{else}}
-    LServer.Listen(APort);
-    LogI('Listening on http://localhost:' + APort.ToString);
-    LogI('Server type: Indy Direct');
+    LogI('Starting on http://localhost:' + APort.ToString +
+      ' (Indy Direct). Press Ctrl+C to shut down.');
 {{endif}}
 {{if websocketserver_generate}}
+    // WebSocket bridge starts BEFORE the HTTP server so it is reachable
+    // as soon as RunAndWait binds the HTTP port; it is freed AFTER
+    // RunAndWait returns (the HTTP server has already been stopped).
     LWSServer := BuildWebSocketServer(dotEnv.Env('dmvc.wsserver.port', 9000));
     try
       LWSServer.Active := True;
-      LogI('Listening on ws://localhost:' + LWSServer.DefaultPort.ToString);
-      LogI('Application started. Press Ctrl+C to shut down.');
-      WaitForTerminationSignal;
-      EnterInShutdownState;
+      LogI('WebSocket on ws://localhost:' + LWSServer.DefaultPort.ToString);
+      LServer.RunAndWait(APort);
     finally
       LWSServer.Free;
     end;
 {{else}}
-    LogI('Application started. Press Ctrl+C to shut down.');
-    WaitForTerminationSignal;
-    EnterInShutdownState;
+    // RunAndWait: Listen + WaitForTerminationSignal + EnterInShutdownState +
+    // Stop. Console-only. For VCL/FMX/test hosts use Listen() + Stop().
+    LServer.RunAndWait(APort);
 {{endif}}
-    LServer.Stop;
     LServer := nil;
   finally
     LEngine.Free;

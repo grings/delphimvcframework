@@ -91,6 +91,7 @@ type
     destructor Destroy; override;
     procedure Listen(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     procedure Stop;
+    procedure RunAndWait(APort: Integer = 8080; const AHost: string = '0.0.0.0');
     function IsRunning: Boolean;
     /// <summary>
     /// Underlying TIdHTTPWebBrokerBridge as TObject. HTTPS providers cast it
@@ -106,7 +107,8 @@ implementation
 
 uses
   IdHTTPWebBrokerBridge,
-  Web.HTTPApp, Web.WebReq;
+  Web.HTTPApp, Web.WebReq,
+  MVCFramework.Signal;
 
 type
   TMVCAutoWebModule = class(TWebModule)
@@ -222,6 +224,17 @@ end;
 function TMVCWebBrokerServer.IsRunning: Boolean;
 begin
   Result := BridgeOf(Self).Active;
+end;
+
+procedure TMVCWebBrokerServer.RunAndWait(APort: Integer; const AHost: string);
+begin
+  Listen(APort, AHost);
+  try
+    WaitForTerminationSignal;
+    EnterInShutdownState;
+  finally
+    Stop;
+  end;
 end;
 
 procedure TMVCWebBrokerServer.OnParseAuthentication(AContext: TIdContext;
