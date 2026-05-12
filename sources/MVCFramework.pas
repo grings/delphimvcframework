@@ -589,6 +589,7 @@ type
     fIntfObject: IInterface;
     fServiceContainerResolver: IMVCServiceContainerResolver;
     fSessionFactory: TMVCWebSessionFactory;
+    fViewData: TMVCViewDataObject;
     function GetSessionFactory: TMVCWebSessionFactory; inline;
     function GetWebSession: TMVCWebSession;
     function GetLoggedUser: TMVCUser;
@@ -598,6 +599,7 @@ type
     function GetIntfObject: IInterface;
     procedure SetIntfObject(const Value: IInterface);
     function GetLoggedUserExists: Boolean;
+    function GetViewData: TMVCViewDataObject;
   protected
     fActionQualifiedName: String;
     procedure Flush; virtual;
@@ -632,6 +634,7 @@ type
     property ParamsTable: TMVCRequestParamsTable read GetParamsTable write SetParamsTable;
     property ActionQualifiedName: String read fActionQualifiedName;
     property ServiceContainerResolver: IMVCServiceContainerResolver read fServiceContainerResolver;
+    property ViewData: TMVCViewDataObject read GetViewData;
   end;
 
   TMVCJSONRPCExceptionErrorInfo = record
@@ -2108,6 +2111,7 @@ begin
   FData := nil;
   FLoggedUser := nil;
   fIntfObject := nil;
+  fViewData := nil;
 end;
 
 constructor TWebContext.Create(const AServiceContainerResolver: IMVCServiceContainerResolver; const ARequest: TMVCWebRequest; const AResponse: TMVCWebResponse;
@@ -2126,6 +2130,7 @@ begin
   FData := nil;
   FLoggedUser := nil;
   fIntfObject := nil;
+  fViewData := nil;
 end;
 
 destructor TWebContext.Destroy;
@@ -2152,6 +2157,7 @@ begin
     FLoggedUser.Free;
   except
   end;
+  FreeAndNil(fViewData);
   inherited Destroy;
 end;
 
@@ -2176,6 +2182,15 @@ begin
     fData := TMVCStringDictionary.Create;
   end;
   Result := fData;
+end;
+
+// Mirrors classic TMVCController.GetViewModel: parameterless TMVCViewDataObject.Create
+// (internally inherited Create([]) — no ownership flags; values are TValue, a managed record)
+function TWebContext.GetViewData: TMVCViewDataObject;
+begin
+  if fViewData = nil then
+    fViewData := TMVCViewDataObject.Create;
+  Result := fViewData;
 end;
 
 function TWebContext.GetHostingFrameworkType: TMVCHostingFrameworkType;

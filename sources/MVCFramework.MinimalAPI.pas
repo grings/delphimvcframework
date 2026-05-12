@@ -465,6 +465,11 @@ type
       AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
   end;
 
+// Returns the ViewData dictionary for the request currently being dispatched
+// by the minimal-API middleware. Raises EMVCMinimalAPI if called outside a
+// minimal-API request (no current context).
+function ViewData: TMVCViewDataObject;
+
 implementation
 
 uses
@@ -476,6 +481,17 @@ uses
   MVCFramework.Serializer.JsonDataObjects,
   MVCFramework.Validation,
   MVCFramework.ValidationEngine;
+
+threadvar
+  gCurrentContext: TWebContext;
+
+function ViewData: TMVCViewDataObject;
+begin
+  if gCurrentContext = nil then
+    raise EMVCMinimalAPI.Create(
+      'ViewData called outside a minimal-API request scope');
+  Result := gCurrentContext.ViewData;
+end;
 
 { -------------------------------------------------------------------------- }
 { TMVCMinimalRoute                                                           }
@@ -1335,10 +1351,18 @@ begin
         // Build the filter chain (filters wrap the handler call). Any
         // try/except/finally semantics belong INSIDE individual filters
         // — there is no separate Before/Success/Error/Always now.
-        lResp := BuildFilterChain(lRoute, AContext, lRenderer)();
-        if lResp <> nil then
-          TMVCRenderer.InternalRenderMVCResponse(lRenderer,
-            TMVCResponse(lResp as TObject));
+        // The threadvar set/clear wraps the entire filter chain so
+        // global helpers (e.g. RenderView, ViewData) work from any
+        // handler or filter, including filters rendering error responses.
+        gCurrentContext := AContext;
+        try
+          lResp := BuildFilterChain(lRoute, AContext, lRenderer)();
+          if lResp <> nil then
+            TMVCRenderer.InternalRenderMVCResponse(lRenderer,
+              TMVCResponse(lResp as TObject));
+        finally
+          gCurrentContext := nil;
+        end;
       except
         // Validation failures (EMVCValidationException) carry 422 from
         // their constructor and fall through to the EMVCException handler
