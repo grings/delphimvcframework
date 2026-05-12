@@ -78,6 +78,13 @@ uses
   MVCFramework.Container;
 
 type
+  // Classifies a route registered via the minimal-API surface.
+  //   rkApi  - JSON API endpoint; appears in OpenAPI by default
+  //   rkWeb  - server-rendered HTML endpoint; excluded from OpenAPI by default
+  // Routes registered via TMVCEngine.Root / Prefix are rkApi.
+  // Routes registered via TMVCEngine.WebRoot / WebPrefix are rkWeb.
+  TMVCRouteKind = (rkApi, rkWeb);
+
   EMVCMinimalAPI = class(EMVCException);
 
   // -------------------------------------------------------------------------
@@ -154,6 +161,7 @@ type
     fName: string;
     fMetadata: TDictionary<string, TValue>;
     fParamTypes: TArray<PTypeInfo>;
+    fRouteKind: TMVCRouteKind;
     procedure SetName(const AValue: string);
   private
     // Back-reference to the registry the route belongs to. Used by SetName
@@ -179,6 +187,10 @@ type
     // Captured at registration time so OpenAPI emitter / introspection tools
     // can read the handler signature. Length() = 0 for parameter-less handlers.
     property ParamTypes: TArray<PTypeInfo> read fParamTypes write fParamTypes;
+    // Classification of the route: rkApi (JSON) or rkWeb (HTML).
+    // Stamped at registration time by the owning TMVCRouteGroup<T>.
+    // Default rkApi via class-field zero-init.
+    property RouteKind: TMVCRouteKind read fRouteKind write fRouteKind;
   end;
 
   // Per-endpoint chainable configuration. Returned by MapXxx — wraps the
@@ -302,6 +314,7 @@ type
     fPrefix: string;
     fData: T;
     fFilters: TArray<TMVCEndpointFilter>;
+    fRouteKind: TMVCRouteKind;
     function RegisterRoute(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk;
       const AParamTypes: TArray<PTypeInfo>): TMVCMinimalRoute;
@@ -310,7 +323,7 @@ type
       const AParamTypes: TArray<PTypeInfo>): TMVCRouteHandle;
   public
     class function Create(AEngine: TMVCEngine; const APrefix: string;
-      const AData: T): TMVCRouteGroup<T>; static;
+      const AData: T; ARouteKind: TMVCRouteKind = rkApi): TMVCRouteGroup<T>; static;
 
     // Nested grouping. Returns a new group whose path is the concatenation
     // of the parent prefix and APath; the parent's filter chain is
@@ -460,6 +473,13 @@ type
     function Prefix<T: class>(const APrefix: string; const AData: T;
       AOwns: Boolean = True): TMVCRouteGroup<T>; overload;
 
+    // Web endpoint group. Routes registered here render HTML, are excluded
+    // from OpenAPI by default, and have access to ViewData / RenderView.
+    function WebRoot: TMVCRouteGroup<TObject>;
+    function WebPrefix(const APrefix: string): TMVCRouteGroup<TObject>; overload;
+    function WebPrefix<T: class>(const APrefix: string; const AData: T;
+      AOwns: Boolean = True): TMVCRouteGroup<T>; overload;
+
     // Internal: wires a route into the registry from a TMVCRouteGroup<T>.
     function RegisterFromGroup(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
@@ -483,14 +503,14 @@ uses
   MVCFramework.ValidationEngine;
 
 threadvar
-  gCurrentContext: TWebContext;
+  GCurrentContext: TWebContext;
 
 function ViewData: TMVCViewDataObject;
 begin
-  if gCurrentContext = nil then
+  if GCurrentContext = nil then
     raise EMVCMinimalAPI.Create(
       'ViewData called outside a minimal-API request scope');
-  Result := gCurrentContext.ViewData;
+  Result := GCurrentContext.ViewData;
 end;
 
 { -------------------------------------------------------------------------- }
@@ -1354,14 +1374,14 @@ begin
         // The threadvar set/clear wraps the entire filter chain so
         // global helpers (e.g. RenderView, ViewData) work from any
         // handler or filter, including filters rendering error responses.
-        gCurrentContext := AContext;
+        GCurrentContext := AContext;
         try
           lResp := BuildFilterChain(lRoute, AContext, lRenderer)();
           if lResp <> nil then
             TMVCRenderer.InternalRenderMVCResponse(lRenderer,
               TMVCResponse(lResp as TObject));
         finally
-          gCurrentContext := nil;
+          GCurrentContext := nil;
         end;
       except
         // Validation failures (EMVCValidationException) carry 422 from
@@ -1453,7 +1473,9 @@ end;
 
 function TMVCEngineMinimalAPIHelper.Root: TMVCRouteGroup<TObject>;
 begin
-  Result := Prefix('');
+  // Always rkApi — JSON endpoints. For HTML/web endpoints use WebRoot.
+  GetOrCreateMiddleware;
+  Result := TMVCRouteGroup<TObject>.Create(Self, '', nil);  // defaults to rkApi
 end;
 
 function TMVCEngineMinimalAPIHelper.Prefix(
@@ -1476,16 +1498,42 @@ begin
   Result := TMVCRouteGroup<T>.Create(Self, APrefix, AData);
 end;
 
+function TMVCEngineMinimalAPIHelper.WebRoot: TMVCRouteGroup<TObject>;
+begin
+  GetOrCreateMiddleware;
+  Result := TMVCRouteGroup<TObject>.Create(Self, '', nil, rkWeb);
+end;
+
+function TMVCEngineMinimalAPIHelper.WebPrefix(
+  const APrefix: string): TMVCRouteGroup<TObject>;
+begin
+  GetOrCreateMiddleware;
+  Result := TMVCRouteGroup<TObject>.Create(Self, APrefix, nil, rkWeb);
+end;
+
+function TMVCEngineMinimalAPIHelper.WebPrefix<T>(const APrefix: string;
+  const AData: T; AOwns: Boolean): TMVCRouteGroup<T>;
+var
+  lMW: TMVCMinimalAPIMiddleware;
+begin
+  lMW := GetOrCreateMiddleware;
+  if AOwns and (AData <> nil) then
+    lMW.Registry.TrackOwned(AData);
+  Result := TMVCRouteGroup<T>.Create(Self, APrefix, AData, rkWeb);
+end;
+
 { -------------------------------------------------------------------------- }
 { TMVCRouteGroup<T>                                                          }
 { -------------------------------------------------------------------------- }
 
 class function TMVCRouteGroup<T>.Create(AEngine: TMVCEngine;
-  const APrefix: string; const AData: T): TMVCRouteGroup<T>;
+  const APrefix: string; const AData: T;
+  ARouteKind: TMVCRouteKind): TMVCRouteGroup<T>;
 begin
   Result.fEngine := AEngine;
   Result.fPrefix := APrefix;
   Result.fData := AData;
+  Result.fRouteKind := ARouteKind;
   // hook arrays start nil — TArray refcounted assignment is no-op for nil
 end;
 
@@ -1494,6 +1542,7 @@ function TMVCRouteGroup<T>.RegisterRoute(AVerb: TMVCHTTPMethodType;
   const AParamTypes: TArray<PTypeInfo>): TMVCMinimalRoute;
 begin
   Result := fEngine.RegisterFromGroup(AVerb, fPrefix + APath, AThunk);
+  Result.RouteKind := fRouteKind;
   if fData <> nil then
   begin
     Result.GroupData := TObject(fData);
@@ -1521,7 +1570,12 @@ begin
   // ASP.NET Core MapGroup and FastAPI include_router: cross-cutting
   // concerns (logging, auth, rate-limit) added on a parent group are seen
   // by every nested route, regardless of whether the typed data changed.
-  Result := fEngine.Prefix<U>(fPrefix + APath, AData, AOwns);
+  // The parent's RouteKind also propagates: a WebPrefix nested under a
+  // WebPrefix stays rkWeb, even when the typed data slot changes.
+  if fRouteKind = rkWeb then
+    Result := fEngine.WebPrefix<U>(fPrefix + APath, AData, AOwns)
+  else
+    Result := fEngine.Prefix<U>(fPrefix + APath, AData, AOwns);
   for lFilter in fFilters do
     Result := Result.Use(lFilter);
 end;
