@@ -1,0 +1,9 @@
+{{extends "../baselayout.html"}}
+{{block "body"}}
+<h1 class="text-2xl font-bold mb-4">Admin</h1>
+<p>Welcome, <strong>{{:user}}</strong>.</p>
+<p>This page is rendered only when a session cookie carries the <code>user</code> key — the
+<code>RequireLogin</code> filter (an Express-style middleware) redirects to <code>/login</code>
+otherwise.</p>
+<p><a href="/admin/logout">Log out</a></p>
+{{endblock}}

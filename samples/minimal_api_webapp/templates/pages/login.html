@@ -1,0 +1,23 @@
+{{extends "../baselayout.html"}}
+{{block "body"}}
+<h1 class="text-2xl font-bold mb-4">Login</h1>
+
+{{if error}}
+<article style="background-color: #fee; color: #900; padding: 0.6rem;">
+    <strong>{{:error}}</strong>
+</article>
+{{endif}}
+
+<form method="POST" action="/login">
+    <label>
+        Username
+        <input type="text" name="username" autocomplete="username" required>
+    </label>
+    <label>
+        Password
+        <input type="password" name="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit">Sign in</button>
+    <small>Hint: <code>admin</code> / <code>admin</code></small>
+</form>
+{{endblock}}
