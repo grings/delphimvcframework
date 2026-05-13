@@ -258,6 +258,20 @@ type
     fRoute: TMVCMinimalRoute;
   public
     property Route: TMVCMinimalRoute read fRoute write fRoute;
+
+    // Renders one or more server-side view templates using the engine's
+    // configured TMVCViewEngineClass (TemplatePro / WebStencils / Mustache,
+    // as set via TMVCEngine.SetViewEngine). Mirrors TMVCController.RenderView
+    // for the minimal-API world: the data source is the per-request
+    // TWebContext.ViewData populated through the global ViewData() helper,
+    // since there is no controller instance to carry a FViewModel.
+    function RenderView(const AViewName: string;
+      const AOnBeforeRender: TMVCSSVBeforeRenderCallback = nil): string; overload;
+    // AUseCommonHeadersAndFooters is accepted for API parity with
+    // TMVCController.RenderViews but ignored — minimal-API handlers have no
+    // per-handler page-header/footer state to wrap views with.
+    function RenderViews(const AViewNames: TArray<string>;
+      const AUseCommonHeadersAndFooters: Boolean = True): string; overload;
   end;
 
   // -------------------------------------------------------------------------
@@ -490,6 +504,27 @@ type
 // minimal-API request (no current context).
 function ViewData: TMVCViewDataObject;
 
+// Renders a server-side view template using the engine's configured
+// TMVCViewEngineClass (TemplatePro / WebStencils / Mustache via
+// TMVCEngine.SetViewEngine). The current request's ViewData() is the data
+// source; the returned IMVCResponse carries the rendered HTML body with
+// Content-Type text/html; charset=utf-8 and StatusCode 200 (override on the
+// returned instance: Result.StatusCode := N).
+//
+// Raises EMVCMinimalAPI if called outside a minimal-API request scope.
+function RenderView(const AViewName: string): IMVCResponse; overload;
+function RenderView(const AViewName: string;
+  const AOnBeforeRender: TMVCSSVBeforeRenderCallback): IMVCResponse; overload;
+
+// Renders multiple view templates concatenated into a single HTML body. Useful
+// for header/content/footer composition.
+//
+// AUseCommonHeadersAndFooters is accepted for API parity with
+// TMVCController.RenderViews but ignored — minimal-API handlers have no
+// per-handler page-header/footer state to wrap views with.
+function RenderViews(const AViewNames: TArray<string>;
+  const AUseCommonHeadersAndFooters: Boolean = True): IMVCResponse;
+
 implementation
 
 uses
@@ -504,6 +539,10 @@ uses
 
 threadvar
   GCurrentContext: TWebContext;
+  // Per-request renderer published by the dispatcher. RenderView /
+  // RenderViews need an Engine + Context + view engine class to do their job;
+  // the renderer carries all three. nil outside a minimal-API request scope.
+  GCurrentMinimalRenderer: TMVCMinimalRenderer;
 
 function ViewData: TMVCViewDataObject;
 begin
@@ -511,6 +550,132 @@ begin
     raise EMVCMinimalAPI.Create(
       'ViewData called outside a minimal-API request scope');
   Result := GCurrentContext.ViewData;
+end;
+
+function CurrentMinimalRendererOrFail: TMVCMinimalRenderer;
+begin
+  if GCurrentMinimalRenderer = nil then
+    raise EMVCMinimalAPI.Create(
+      'RenderView/RenderViews called outside a minimal-API request scope');
+  Result := GCurrentMinimalRenderer;
+end;
+
+function BuildHTMLResponse(const AHtml: string): IMVCResponse;
+var
+  lResp: TMVCHTMLResponse;
+begin
+  lResp := TMVCHTMLResponse.Create;
+  // StatusCode defaults to 200; caller can override via Result.StatusCode := N
+  // after RenderView returns.
+  lResp.StatusCode := http_status.OK;
+  lResp.HTMLBody := AHtml;
+  Result := lResp; // IMVCResponse holds the reference; ARC manages lifetime.
+end;
+
+function RenderView(const AViewName: string): IMVCResponse;
+begin
+  Result := RenderView(AViewName, nil);
+end;
+
+function RenderView(const AViewName: string;
+  const AOnBeforeRender: TMVCSSVBeforeRenderCallback): IMVCResponse;
+var
+  lRenderer: TMVCMinimalRenderer;
+  lHtml: string;
+begin
+  lRenderer := CurrentMinimalRendererOrFail;
+  lHtml := lRenderer.RenderView(AViewName, AOnBeforeRender);
+  Result := BuildHTMLResponse(lHtml);
+end;
+
+function RenderViews(const AViewNames: TArray<string>;
+  const AUseCommonHeadersAndFooters: Boolean): IMVCResponse;
+var
+  lRenderer: TMVCMinimalRenderer;
+  lHtml: string;
+begin
+  // AUseCommonHeadersAndFooters is accepted for API parity with
+  // TMVCController.RenderViews but ignored — minimal-API handlers have no
+  // per-handler page-header/footer state to wrap views with.
+  lRenderer := CurrentMinimalRendererOrFail;
+  lHtml := lRenderer.RenderViews(AViewNames, AUseCommonHeadersAndFooters);
+  Result := BuildHTMLResponse(lHtml);
+end;
+
+{ -------------------------------------------------------------------------- }
+{ TMVCMinimalRenderer                                                        }
+{ -------------------------------------------------------------------------- }
+
+type
+  // "Cracker" used solely to assign FBeforeRenderCallback on a view engine
+  // instance from this unit. TMVCBaseViewEngine declares the field as
+  // protected; same-class access from a different unit requires reopening
+  // the class via inheritance to surface the protected member. The classic
+  // TMVCController.GetRenderedView (same unit as TMVCBaseViewEngine) sets it
+  // directly — we replicate that exact behaviour here.
+  TMVCBaseViewEngineAccess = class(TMVCBaseViewEngine);
+
+function TMVCMinimalRenderer.RenderView(const AViewName: string;
+  const AOnBeforeRender: TMVCSSVBeforeRenderCallback): string;
+var
+  lView: TMVCBaseViewEngine;
+  lStrStream: TStringBuilder;
+begin
+  // Mirrors TMVCController.GetRenderedView, but without a TMVCController
+  // instance: the data source is TWebContext.ViewData (populated by the
+  // global ViewData() helper) instead of FViewModel, and the controller
+  // argument to the view-engine constructor is nil. FController is set on
+  // TMVCBaseViewEngine but the framework never reads it back, so passing nil
+  // is safe for the bundled engines (TemplatePro / WebStencils / Mustache).
+  lStrStream := TStringBuilder.Create;
+  try
+    lView := Engine.ViewEngineClass.Create(
+      Engine, GetContext, nil, GetContext.ViewData, ContentType);
+    try
+      TMVCBaseViewEngineAccess(lView).FBeforeRenderCallback := AOnBeforeRender;
+      lView.Execute(AViewName, lStrStream);
+    finally
+      lView.Free;
+    end;
+    Result := lStrStream.ToString;
+  finally
+    lStrStream.Free;
+  end;
+end;
+
+function TMVCMinimalRenderer.RenderViews(const AViewNames: TArray<string>;
+  const AUseCommonHeadersAndFooters: Boolean): string;
+var
+  lView: TMVCBaseViewEngine;
+  lViewName: string;
+  lStrStream: TStringBuilder;
+begin
+  // AUseCommonHeadersAndFooters is accepted for API parity with
+  // TMVCController.RenderViews but ignored — minimal-API handlers have no
+  // per-handler page-header/footer state to wrap views with.
+  //
+  // Mirrors TMVCController.GetRenderedView, but without a TMVCController
+  // instance: the data source is TWebContext.ViewData (populated by the
+  // global ViewData() helper) instead of FViewModel, and the controller
+  // argument to the view-engine constructor is nil. FController is set on
+  // TMVCBaseViewEngine but the framework never reads it back, so passing nil
+  // is safe for the bundled engines (TemplatePro / WebStencils / Mustache).
+  lStrStream := TStringBuilder.Create;
+  try
+    lView := Engine.ViewEngineClass.Create(
+      Engine, GetContext, nil, GetContext.ViewData, ContentType);
+    try
+      for lViewName in AViewNames do
+      begin
+        lView.Execute(lViewName, lStrStream);
+      end;
+    finally
+      lView.Free;
+    end;
+    Result := lStrStream.ToString;
+  finally
+    lStrStream.Free;
+  end;
 end;
 
 { -------------------------------------------------------------------------- }
@@ -1367,36 +1532,40 @@ begin
       lRenderer.SetContentType(TMVCMediaType.APPLICATION_JSON);
       lRenderer.Route := lRoute;  // <-- gives Resolve<T> access to group data
 
+      // Build the filter chain (filters wrap the handler call). Any
+      // try/except/finally semantics belong INSIDE individual filters
+      // — there is no separate Before/Success/Error/Always now.
+      // The threadvar set/clear wraps the entire filter chain AND the
+      // framework-level exception handlers, so global helpers (e.g.
+      // RenderView, ViewData) work from any handler or filter, and so
+      // future error-page rendering inside the except blocks below can
+      // still see the current context/renderer.
+      GCurrentContext := AContext;
+      GCurrentMinimalRenderer := lRenderer;
       try
-        // Build the filter chain (filters wrap the handler call). Any
-        // try/except/finally semantics belong INSIDE individual filters
-        // — there is no separate Before/Success/Error/Always now.
-        // The threadvar set/clear wraps the entire filter chain so
-        // global helpers (e.g. RenderView, ViewData) work from any
-        // handler or filter, including filters rendering error responses.
-        GCurrentContext := AContext;
         try
           lResp := BuildFilterChain(lRoute, AContext, lRenderer)();
           if lResp <> nil then
             TMVCRenderer.InternalRenderMVCResponse(lRenderer,
               TMVCResponse(lResp as TObject));
-        finally
-          GCurrentContext := nil;
+        except
+          // Validation failures (EMVCValidationException) carry 422 from
+          // their constructor and fall through to the EMVCException handler
+          // below, which respects the exception's own status. 422
+          // (Unprocessable Entity, RFC 4918) is the right code: the request
+          // was syntactically well-formed JSON but failed semantic validation
+          // — distinct from 400 (Bad Request) used for parse / binding
+          // failures (EMVCMinimalAPI).
+          on E: EMVCException do
+            RenderExceptionAsProblem(lRenderer, AContext,
+              E.HTTPStatusCode, ReasonPhraseFor(E.HTTPStatusCode), E);
+          on E: Exception do
+            RenderExceptionAsProblem(lRenderer, AContext,
+              http_status.InternalServerError, 'Internal Server Error', E);
         end;
-      except
-        // Validation failures (EMVCValidationException) carry 422 from
-        // their constructor and fall through to the EMVCException handler
-        // below, which respects the exception's own status. 422
-        // (Unprocessable Entity, RFC 4918) is the right code: the request
-        // was syntactically well-formed JSON but failed semantic validation
-        // — distinct from 400 (Bad Request) used for parse / binding
-        // failures (EMVCMinimalAPI).
-        on E: EMVCException do
-          RenderExceptionAsProblem(lRenderer, AContext,
-            E.HTTPStatusCode, ReasonPhraseFor(E.HTTPStatusCode), E);
-        on E: Exception do
-          RenderExceptionAsProblem(lRenderer, AContext,
-            http_status.InternalServerError, 'Internal Server Error', E);
+      finally
+        GCurrentMinimalRenderer := nil;
+        GCurrentContext := nil;
       end;
       AHandled := True;
     finally

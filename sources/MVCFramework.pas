@@ -1322,6 +1322,22 @@ type
     property ObjectDictionary: IMVCObjectDictionary read GetObjectDictionary write SetObjectDictionary;
   end;
 
+  // Response carrying a pre-rendered HTML body. The render pipeline
+  // (TMVCRenderer.InternalRenderMVCResponse) detects this subclass and writes
+  // the body raw with Content-Type text/html; charset=utf-8, instead of
+  // JSON-serializing the standard TMVCResponse fields. Used by the
+  // minimal-API RenderView / RenderViews helpers so that HTML handlers can
+  // return an IMVCResponse with the same ergonomics as JSON handlers
+  // (StatusCode setter, Headers, etc.).
+  TMVCHTMLResponse = class(TMVCResponse)
+  strict private
+    fHTMLBody: string;
+  protected
+    function HasBody: Boolean; override;
+  public
+    property HTMLBody: string read fHTMLBody write fHTMLBody;
+  end;
+
   TMVCErrorResponse = class(TMVCResponse)
   private
     fClassname: string;
@@ -4324,6 +4340,17 @@ begin
   begin
     Controller.FContext.Response.CustomHeaders.AddStrings(MVCResponse.fHeaders);
   end;
+  // HTML fast path: minimal-API RenderView produces a TMVCHTMLResponse whose
+  // body is already rendered HTML. Emit it raw with text/html — bypassing
+  // JSON serialization entirely — while still honouring the response's
+  // StatusCode and any custom headers copied above.
+  if MVCResponse is TMVCHTMLResponse then
+  begin
+    Controller.SetContentType(TMVCMediaType.TEXT_HTML + '; charset=' + TMVCCharSet.UTF_8);
+    Controller.ResponseStatus(MVCResponse.StatusCode);
+    Controller.Render(TMVCHTMLResponse(MVCResponse).HTMLBody);
+    Exit;
+  end;
   if MVCResponse.HasBody then
   begin
     Controller.ResponseStatus(MVCResponse.StatusCode);
@@ -5303,6 +5330,14 @@ end;
 function TMVCResponse.HasBody: Boolean;
 begin
   Result := (not fMessage.IsEmpty) or (fData <> nil) or (fObjectDictionary <> nil);
+end;
+
+function TMVCHTMLResponse.HasBody: Boolean;
+begin
+  // Non-empty HTML counts as a body. InternalRenderMVCResponse short-circuits
+  // on TMVCHTMLResponse before consulting HasBody, so this override exists for
+  // external callers consulting the IMVCResponse contract (e.g. tests).
+  Result := (fHTMLBody <> '') or inherited HasBody;
 end;
 
 function TMVCResponse.HasHeaders: Boolean;
