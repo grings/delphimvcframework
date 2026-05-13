@@ -46,6 +46,10 @@ type
     [MVCFromContentField('remember', 'false')] Remember: Boolean;
   end;
 
+  TMultiValueForm = record
+    [MVCFromContentField('tag')] Tags: TArray<string>;
+  end;
+
 procedure RegisterMinimalAPIWebRoutes(AEngine: TMVCEngine);
 begin
   // -- routing test: simple WebRoot GET returns text/html
@@ -72,6 +76,22 @@ begin
       ViewData['username'] := F.Username;
       ViewData['remember'] := F.Remember;
       Result := RenderView('minimal_web_login_result');
+    end);
+
+  // -- multi-value form binding: [MVCFromContentField] on TArray<string>
+  AEngine.WebRoot.MapPost<TMultiValueForm>('/minimal-web/multi',
+    function (F: TMultiValueForm): IMVCResponse
+    begin
+      ViewData['count'] := IntToStr(Length(F.Tags));
+      if Length(F.Tags) >= 1 then
+        ViewData['first'] := F.Tags[0]
+      else
+        ViewData['first'] := '';
+      if Length(F.Tags) >= 2 then
+        ViewData['second'] := F.Tags[1]
+      else
+        ViewData['second'] := '';
+      Result := RenderView('minimal_web_multi');
     end);
 
   // -- filter renders error page

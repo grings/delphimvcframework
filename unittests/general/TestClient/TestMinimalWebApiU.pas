@@ -50,6 +50,8 @@ type
     procedure Test_Filter_can_render_HTML_response;
     [Test]
     procedure Test_Threadvar_isolation_under_concurrent_requests;
+    [Test]
+    procedure Test_TArrayString_multivalue_form_binding;
   end;
 
 implementation
@@ -215,6 +217,24 @@ begin
     lErrors.Free;
     lLock.Free;
   end;
+end;
+
+procedure TTestMinimalWebApi.Test_TArrayString_multivalue_form_binding;
+var
+  lResp: IMVCRESTResponse;
+begin
+  // Send the same 'tag' field three times - multi-value form post.
+  // Verifies that [MVCFromContentField] on TArray<string> in the record
+  // binds via ContentParamsMulti (mirrors the classic controller behavior).
+  lResp := RESTClient
+    .AddBodyFieldFormData('tag', 'alpha')
+    .AddBodyFieldFormData('tag', 'beta')
+    .AddBodyFieldFormData('tag', 'gamma')
+    .Post('/minimal-web/multi');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'count=3');
+  Assert.Contains(lResp.Content, 'first=alpha');
+  Assert.Contains(lResp.Content, 'second=beta');
 end;
 
 initialization

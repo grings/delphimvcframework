@@ -1174,11 +1174,21 @@ begin
         // Mirror the classic controller (MVCFramework.pas) behavior:
         // TArray<string> fields bind to ContentParamsMulti to support
         // multi-value form fields (e.g. <select multiple>, repeated checkboxes).
-        if lField.FieldType.QualifiedName.StartsWith('System.TArray<System.', True) then
+        // Only TArray<string> is supported for multi-value bind; other dynamic
+        // array types raise a clear error rather than producing a TValue cast
+        // failure at runtime.
+        if SameText(lField.FieldType.QualifiedName, 'System.TArray<System.string>') then
         begin
           lField.SetValue(lAddr,
             TValue.From< TArray<string> >(
               AContext.Request.ContentParamsMulti[lFromContentField.ParamName]));
+        end
+        else if lField.FieldType.QualifiedName.StartsWith('System.TArray<System.', True) then
+        begin
+          raise EMVCMinimalAPI.CreateFmt(http_status.InternalServerError,
+            '[MVCFromContentField] on record field "%s" supports only TArray<string> for multi-value bind. ' +
+            'Field type "%s" is not supported.',
+            [lField.Name, lField.FieldType.QualifiedName]);
         end
         else
         begin
