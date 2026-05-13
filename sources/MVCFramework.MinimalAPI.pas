@@ -219,10 +219,24 @@ type
     function WithDeprecated(const AValue: Boolean = True): TMVCRouteHandle;
     // OpenAPI 3.x: declares the schema of the 200 response body.
     function Produces<T>: TMVCRouteHandle;
+    // Controls OpenAPI visibility for this route. Default is the route's
+    // group kind: rkApi -> visible; rkWeb -> hidden. Pass True on a web
+    // route to publish it (dual-output endpoints), or False on an API
+    // route to hide it (internal endpoints).
+    function WithOpenAPI(const AVisible: Boolean = True): TMVCRouteHandle;
     // Route-scoped filter, appended after the group's filter stack.
     function Use(const AFilter: TMVCEndpointFilter): TMVCRouteHandle;
     // Escape hatch: access the underlying route.
     property Route: TMVCMinimalRoute read fRoute;
+  end;
+
+  // Static helpers used by the OpenAPI emitter (and other introspection
+  // tools) to interpret route metadata without poking the registry directly.
+  TMVCMinimalRouteHelper = class
+  public
+    // Returns true if the route should be emitted into OpenAPI. Resolves the
+    // route's kind and the optional 'openapi.visible' metadata override.
+    class function IsVisibleInOpenAPI(const ARoute: TMVCMinimalRoute): Boolean; static;
   end;
 
   TMVCMinimalRegistry = class
@@ -769,6 +783,12 @@ begin
   Result := Self;
 end;
 
+function TMVCRouteHandle.WithOpenAPI(const AVisible: Boolean): TMVCRouteHandle;
+begin
+  fRoute.Metadata.AddOrSetValue('openapi.visible', TValue.From<Boolean>(AVisible));
+  Result := Self;
+end;
+
 function TMVCRouteHandle.Use(const AFilter: TMVCEndpointFilter): TMVCRouteHandle;
 var
   lLen: Integer;
@@ -780,6 +800,22 @@ begin
   lArr[lLen] := AFilter;
   fRoute.Filters := lArr;
   Result := Self;
+end;
+
+{ -------------------------------------------------------------------------- }
+{ TMVCMinimalRouteHelper                                                     }
+{ -------------------------------------------------------------------------- }
+
+class function TMVCMinimalRouteHelper.IsVisibleInOpenAPI(
+  const ARoute: TMVCMinimalRoute): Boolean;
+var
+  lVisible: TValue;
+begin
+  if ARoute.Metadata.TryGetValue('openapi.visible', lVisible)
+    and not lVisible.IsEmpty then
+    Result := lVisible.AsBoolean
+  else
+    Result := ARoute.RouteKind = rkApi;
 end;
 
 { -------------------------------------------------------------------------- }

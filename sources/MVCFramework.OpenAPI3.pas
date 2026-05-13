@@ -990,6 +990,7 @@ begin
   begin
     lRoute := lRoutes[I];
     if lRoute = nil then Continue;
+    if not TMVCMinimalRouteHelper.IsVisibleInOpenAPI(lRoute) then Continue;
     EmitOperation(APathsObject, ASchemaBuilder, lRoute);
   end;
 end;
