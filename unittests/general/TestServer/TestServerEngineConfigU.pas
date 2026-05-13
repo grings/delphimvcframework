@@ -20,6 +20,9 @@ uses
   TestServerControllerPrivateU,
   AuthHandlersU,
   TestServerControllerJSONRPCU,
+  MinimalAPIWebTestsU,
+  MVCFramework.OpenAPI3,
+  MVCFramework.Middleware.OpenAPI3,
   {$IFNDEF LINUX}
   MVCFramework.View.Renderers.Mustache,
   {$ENDIF}
@@ -32,6 +35,8 @@ uses
   ;
 
 procedure ConfigureTestEngine(AEngine: TMVCEngine);
+var
+  lOAInfo: TMVCOpenAPIInfo;
 begin
   AEngine
     .AddController(TTestServerController)
@@ -87,6 +92,14 @@ begin
   AEngine.SetViewEngine(TMVCMustacheViewEngine);
   RegisterOptionalCustomTypesSerializers(AEngine.Serializer(TMVCMediaType.APPLICATION_JSON));
 {$ENDIF}
+
+  // Minimal-API web extension integration tests
+  RegisterMinimalAPIWebRoutes(AEngine);
+
+  // OpenAPI 3 endpoint at /openapi.json (used by the Minimal API OpenAPI tests)
+  lOAInfo.Title := 'DMVCFramework TestServer';
+  lOAInfo.Version := '1.0';
+  AEngine.AddMiddleware(TMVCOpenAPI3Middleware.Create(AEngine, lOAInfo));
 end;
 
 end.

@@ -541,11 +541,19 @@ type
 
   TMVCViewDataObject = class(TObjectDictionary<string, TValue>)
   private
-    { private declarations }
+    // Inherited TDictionary<>.Items[setter] (SetItem) raises EListError when
+    // the key isn't already present. That makes `ViewData['key'] := value`
+    // unusable on a fresh dictionary. Override the default property to use
+    // AddOrSetValue semantics — same behaviour TMVCController.SetViewData
+    // already provides for the classic surface.
+    function GetItemAddOrSet(const Name: string): TValue;
+    procedure SetItemAddOrSet(const Name: string; const Value: TValue);
   protected
     { protected declarations }
   public
     constructor Create;
+    property Items[const Name: string]: TValue
+      read GetItemAddOrSet write SetItemAddOrSet; default;
   end;
 
   TMVCStringPair = class
@@ -1129,6 +1137,17 @@ end;
 constructor TMVCViewDataObject.Create;
 begin
   inherited Create([]);
+end;
+
+function TMVCViewDataObject.GetItemAddOrSet(const Name: string): TValue;
+begin
+  if not TryGetValue(Name, Result) then
+    Result := TValue.Empty;
+end;
+
+procedure TMVCViewDataObject.SetItemAddOrSet(const Name: string; const Value: TValue);
+begin
+  AddOrSetValue(Name, Value);
 end;
 
 { TMVCCriticalSectionHelper }

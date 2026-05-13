@@ -111,7 +111,8 @@ uses
   MVCFramework.WebBroker.Request in '..\..\..\sources\MVCFramework.WebBroker.Request.pas',
   MVCFramework.WebBroker.Response in '..\..\..\sources\MVCFramework.WebBroker.Response.pas',
   ServerAbstractionTestU in 'ServerAbstractionTestU.pas',
-  IndyDirectSingleFlushTestU in 'IndyDirectSingleFlushTestU.pas';
+  IndyDirectSingleFlushTestU in 'IndyDirectSingleFlushTestU.pas',
+  TestMinimalWebApiU in 'TestMinimalWebApiU.pas';
 
 {$R *.RES}
 

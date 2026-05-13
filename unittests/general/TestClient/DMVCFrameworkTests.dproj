@@ -294,6 +294,7 @@
             <DesignClass>TWebModule</DesignClass>
         </DCCReference>
         <DCCReference Include="..\..\..\sources\MVCFramework.Middleware.RangeMedia.pas"/>
+        <DCCReference Include="TestMinimalWebApiU.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

@@ -21,6 +21,7 @@ uses
   AuthHandlersU in 'AuthHandlersU.pas',
   BusinessObjectsU in '..\..\..\samples\commons\BusinessObjectsU.pas',
   TestServerControllerJSONRPCU in 'TestServerControllerJSONRPCU.pas',
+  MinimalAPIWebTestsU in 'MinimalAPIWebTestsU.pas',
   RandomUtilsU in '..\..\..\samples\commons\RandomUtilsU.pas',
   MVCFramework.Tests.Serializer.Entities in '..\..\common\MVCFramework.Tests.Serializer.Entities.pas',
   FDConnectionConfigU in '..\..\common\FDConnectionConfigU.pas',

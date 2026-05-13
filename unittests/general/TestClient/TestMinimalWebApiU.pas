@@ -1,0 +1,224 @@
+// ***************************************************************************
+//
+// Delphi MVC Framework
+//
+// Copyright (c) 2010-2026 Daniele Teti and the DMVCFramework Team
+//
+// https://github.com/danieleteti/delphimvcframework
+//
+// ***************************************************************************
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+// *************************************************************************** }
+
+unit TestMinimalWebApiU;
+
+interface
+
+uses
+  DUnitX.TestFramework,
+  LiveServerTestU;
+
+type
+  [TestFixture]
+  TTestMinimalWebApi = class(TBaseServerTest)
+  public
+    [Test]
+    procedure Test_WebRoot_routing_returns_text_html;
+    [Test]
+    procedure Test_ViewData_via_Ctx_renders;
+    [Test]
+    procedure Test_RenderView_contentType_includes_charset;
+    [Test]
+    procedure Test_Form_binding_with_MVCFromContentField;
+    [Test]
+    procedure Test_OpenAPI_excludes_rkWeb_routes_by_default;
+    [Test]
+    procedure Test_OpenAPI_includes_web_route_with_WithOpenAPI_True;
+    [Test]
+    procedure Test_Filter_can_render_HTML_response;
+    [Test]
+    procedure Test_Threadvar_isolation_under_concurrent_requests;
+  end;
+
+implementation
+
+uses
+  System.SysUtils,
+  System.Classes,
+  System.Threading,
+  System.SyncObjs,
+  JsonDataObjects,
+  MVCFramework.RESTClient.Intf,
+  MVCFramework.RESTClient,
+  MVCFramework.Commons,
+  TestConstsU;
+
+procedure TTestMinimalWebApi.Test_WebRoot_routing_returns_text_html;
+var
+  lResp: IMVCRESTResponse;
+  lCT: string;
+begin
+  lResp := RESTClient.Get('/minimal-web/hello');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  lCT := LowerCase(lResp.HeaderValue('Content-Type'));
+  Assert.Contains(lCT, 'text/html');
+  Assert.Contains(lResp.Content, 'Hello, world!');
+end;
+
+procedure TTestMinimalWebApi.Test_ViewData_via_Ctx_renders;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient.Get('/minimal-web/viewdata');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'a=alpha');
+  Assert.Contains(lResp.Content, 'b=beta');
+end;
+
+procedure TTestMinimalWebApi.Test_RenderView_contentType_includes_charset;
+var
+  lResp: IMVCRESTResponse;
+  lCT: string;
+begin
+  lResp := RESTClient.Get('/minimal-web/hello');
+  lCT := LowerCase(lResp.HeaderValue('Content-Type'));
+  Assert.Contains(lCT, 'text/html');
+  Assert.Contains(lCT, 'charset=utf-8');
+end;
+
+procedure TTestMinimalWebApi.Test_Form_binding_with_MVCFromContentField;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient
+    .AddBodyFieldFormData('username', 'alice')
+    .AddBodyFieldFormData('password', 'pw')
+    .AddBodyFieldFormData('remember', 'true')
+    .Post('/minimal-web/login');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'user=alice');
+  // JSON booleans render as lowercase 'true'/'false' via the Mustache engine
+  Assert.Contains(LowerCase(lResp.Content), 'remember=true');
+end;
+
+procedure TTestMinimalWebApi.Test_OpenAPI_excludes_rkWeb_routes_by_default;
+var
+  lResp: IMVCRESTResponse;
+  lJson: TJsonObject;
+  lPaths: TJsonObject;
+begin
+  lResp := RESTClient.Get('/openapi.json');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  lJson := TJsonObject.Parse(lResp.Content) as TJsonObject;
+  try
+    lPaths := lJson.O['paths'];
+    Assert.IsTrue(lPaths.Contains('/minimal-web/api-side'),
+      'API sibling must be in spec');
+    Assert.IsFalse(lPaths.Contains('/minimal-web/web-side'),
+      'Web sibling must NOT be in spec by default');
+  finally
+    lJson.Free;
+  end;
+end;
+
+procedure TTestMinimalWebApi.Test_OpenAPI_includes_web_route_with_WithOpenAPI_True;
+var
+  lResp: IMVCRESTResponse;
+  lJson: TJsonObject;
+  lPaths: TJsonObject;
+begin
+  lResp := RESTClient.Get('/openapi.json');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  lJson := TJsonObject.Parse(lResp.Content) as TJsonObject;
+  try
+    lPaths := lJson.O['paths'];
+    Assert.IsTrue(lPaths.Contains('/minimal-web/web-visible'),
+      'Web route opted in with .WithOpenAPI(True) must be in spec');
+  finally
+    lJson.Free;
+  end;
+end;
+
+procedure TTestMinimalWebApi.Test_Filter_can_render_HTML_response;
+var
+  lOk, lBlocked: IMVCRESTResponse;
+begin
+  lOk := RESTClient.Get('/minimal-web/filter');
+  Assert.AreEqual<Integer>(200, lOk.StatusCode);
+  Assert.Contains(lOk.Content, 'FILTER_OK');
+
+  lBlocked := RESTClient.Get('/minimal-web/filter?block=1');
+  Assert.AreEqual<Integer>(200, lBlocked.StatusCode);
+  Assert.Contains(lBlocked.Content, 'BLOCKED');
+end;
+
+procedure TTestMinimalWebApi.Test_Threadvar_isolation_under_concurrent_requests;
+const
+  ITERATIONS = 50;
+var
+  lTasks: array of ITask;
+  i: Integer;
+  lErrors: TStringList;
+  lLock: TCriticalSection;
+begin
+  lErrors := TStringList.Create;
+  lLock := TCriticalSection.Create;
+  try
+    SetLength(lTasks, ITERATIONS);
+    for i := 0 to ITERATIONS - 1 do
+    begin
+      lTasks[i] := TTask.Run(
+        procedure
+        var
+          lMarker: string;
+          lResp: IMVCRESTResponse;
+          lClient: IMVCRESTClient;
+          lExpected: string;
+        begin
+          // Each thread uses its own client; IMVCRESTClient is not designed
+          // for cross-thread sharing of a single instance.
+          lMarker := Format('m%d', [Random(1000000)]);
+          lClient := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+          lClient
+            .ReadTimeout(60 * 1000 * 30)
+            .ProxyServer('localhost')
+            .ProxyPort(8080);
+          lResp := lClient.Get('/minimal-web/iso/' + lMarker);
+          lExpected := Format('marker=%s', [lMarker]);
+          if not lResp.Content.Contains(lExpected) then
+          begin
+            lLock.Enter;
+            try
+              lErrors.Add(Format('expected %s, status %d, body: %s',
+                [lExpected, lResp.StatusCode, lResp.Content]));
+            finally
+              lLock.Leave;
+            end;
+          end;
+        end);
+    end;
+    TTask.WaitForAll(lTasks);
+    Assert.AreEqual<Integer>(0, lErrors.Count, lErrors.Text);
+  finally
+    lErrors.Free;
+    lLock.Free;
+  end;
+end;
+
+initialization
+
+TDUnitX.RegisterTestFixture(TTestMinimalWebApi);
+
+end.
