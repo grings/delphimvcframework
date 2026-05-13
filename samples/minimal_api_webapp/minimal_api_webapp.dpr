@@ -38,6 +38,7 @@ uses
   System.SysUtils,
   MVCFramework,
   MVCFramework.Commons,
+  MVCFramework.Logger,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
   MVCFramework.View.Renderers.TemplatePro,
@@ -54,9 +55,6 @@ procedure RunServer;
 var
   lEngine: TMVCEngine;
 begin
-  WriteLn('** DMVCFramework Minimal API WebApp Sample **');
-  WriteLn;
-
   lEngine := TMVCEngine.Create(
     procedure(Config: TMVCConfig)
     begin
@@ -75,20 +73,13 @@ begin
     // no classic IMVCMiddleware involved.
     RegisterRoutes(lEngine);
 
-    WriteLn(Format('Server starting on http://localhost:%d (Indy Direct)', [PORT]));
-    WriteLn;
-    WriteLn('Try:');
-    WriteLn('  GET  /');
-    WriteLn('  GET  /users');
-    WriteLn('  GET  /customers');
-    WriteLn('  GET  /posts');
-    WriteLn('  GET  /login');
-    WriteLn('  POST /login (admin/admin) -> 302 /admin/');
-    WriteLn('  GET  /admin/  (session-protected)');
-    WriteLn;
-    WriteLn('Press Ctrl+C to stop.');
+    LogI('** DMVCFramework Minimal API WebApp Sample **');
+    LogI(Format('Server starting on http://localhost:%d (Indy Direct)', [PORT]));
+    LogI('Try:  GET / | GET /users | GET /customers | GET /posts | GET /login');
+    LogI('      POST /login (admin/admin) -> 302 /admin/  |  GET /admin/');
+    LogI('Press Ctrl+C to stop.');
     TMVCServerFactory.CreateIndyDirect(lEngine).RunAndWait(PORT);
-    WriteLn('Shutting down...');
+    LogI('Shutting down...');
   finally
     lEngine.Free;
   end;
