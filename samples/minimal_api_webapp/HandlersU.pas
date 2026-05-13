@@ -1,9 +1,9 @@
-unit HandlersU;
+﻿unit HandlersU;
 
 // =============================================================================
 //  Routes for samples/minimal_api_webapp
 //
-//  Everything is wired against TMVCEngine.WebRoot / WebPrefix — no controller
+//  Everything is wired against TMVCEngine.Root.AsWeb / Prefix.AsWeb — no controller
 //  class, no MVC* attributes on routing. Handlers are anonymous functions
 //  returning IMVCResponse. ViewData and RenderView are GLOBAL functions
 //  resolved against a per-request threadvar (set by the minimal-API
@@ -44,7 +44,7 @@ type
 
 // Express-style filter recipe: redirect to ARedirectTo unless the session
 // carries a 'user' value. Returned as a TMVCEndpointFilter so it can be
-// attached with .Use(...) to a WebPrefix group.
+// attached with .Use(...) to a group built via .AsWeb.
 function RequireLogin(const ARedirectTo: string): TMVCEndpointFilter;
 begin
   Result :=
@@ -63,14 +63,14 @@ var
   lAdmin: TMVCRouteGroup<TObject>;
 begin
   // ---------------------------------------------------------------------------
-  // Public web routes (no auth) — WebRoot stamps every route as rkWeb, so
+  // Public web routes (no auth) — .AsWeb stamps every route as rkWeb, so
   // none of them surface in the OpenAPI spec.
   //
   // MemorySession is a plain group filter — every nested group (e.g. /admin
   // below) inherits it through the normal filter-inheritance rules. No
   // classic IMVCMiddleware involved.
   // ---------------------------------------------------------------------------
-  lWeb := AEngine.WebRoot.Use(MemorySession(10));
+  lWeb := AEngine.Root.AsWeb.Use(MemorySession(10));
 
   lWeb.MapGet<TWebContext>('/',
     function (Ctx: TWebContext): IMVCResponse

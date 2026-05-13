@@ -52,6 +52,10 @@ type
     procedure Test_Threadvar_isolation_under_concurrent_requests;
     [Test]
     procedure Test_TArrayString_multivalue_form_binding;
+    [Test]
+    procedure Test_ContentNegotiation_html_accept_selects_rkWeb;
+    [Test]
+    procedure Test_ContentNegotiation_json_accept_selects_rkApi;
   end;
 
 implementation
@@ -235,6 +239,35 @@ begin
   Assert.Contains(lResp.Content, 'count=3');
   Assert.Contains(lResp.Content, 'first=alpha');
   Assert.Contains(lResp.Content, 'second=beta');
+end;
+
+procedure TTestMinimalWebApi.Test_ContentNegotiation_html_accept_selects_rkWeb;
+var
+  lResp: IMVCRESTResponse;
+begin
+  // Two routes share GET /minimal-web/negotiate — one rkApi (returns
+  // 'negotiate-api' JSON-wrapped), one rkWeb (renders HTML containing
+  // 'negotiate-web'). Browser-like Accept must select the rkWeb route.
+  lResp := RESTClient
+    .AddHeader('Accept', 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8')
+    .Get('/minimal-web/negotiate');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(LowerCase(lResp.HeaderValue('Content-Type')), 'text/html');
+  Assert.Contains(lResp.Content, 'negotiate-web');
+end;
+
+procedure TTestMinimalWebApi.Test_ContentNegotiation_json_accept_selects_rkApi;
+var
+  lResp: IMVCRESTResponse;
+begin
+  // Same two routes. API-client Accept must select the rkApi route which
+  // returns 'negotiate-api' through the JSON pipeline.
+  lResp := RESTClient
+    .AddHeader('Accept', 'application/json')
+    .Get('/minimal-web/negotiate');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(LowerCase(lResp.HeaderValue('Content-Type')), 'application/json');
+  Assert.Contains(lResp.Content, 'negotiate-api');
 end;
 
 initialization

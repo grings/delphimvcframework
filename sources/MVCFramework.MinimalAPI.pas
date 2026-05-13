@@ -82,8 +82,8 @@ type
   // Classifies a route registered via the minimal-API surface.
   //   rkApi  - JSON API endpoint; appears in OpenAPI by default
   //   rkWeb  - server-rendered HTML endpoint; excluded from OpenAPI by default
-  // Routes registered via TMVCEngine.Root / Prefix are rkApi.
-  // Routes registered via TMVCEngine.WebRoot / WebPrefix are rkWeb.
+  // All groups start as rkApi. Call .AsWeb on a group to mark it (and every
+  // route + nested sub-group it produces) as rkWeb.
   TMVCRouteKind = (rkApi, rkWeb);
 
   EMVCMinimalAPI = class(EMVCException);
@@ -248,7 +248,14 @@ type
     destructor Destroy; override;
     function Add(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
+    // Route match + content negotiation. When multiple routes match the same
+    // verb+path (e.g. an rkApi and an rkWeb sharing /users), the winner is
+    // picked by scoring each candidate against the request's Accept and
+    // Content-Type headers — rkWeb prefers text/html responses and form
+    // bodies, rkApi prefers application/json responses and JSON bodies.
+    // Ties resolve to the first registered candidate.
     function TryMatch(AVerb: TMVCHTTPMethodType; const APath: string;
+      const AAcceptHeader: string; const AContentTypeHeader: string;
       const AParamsTable: TMVCRequestParamsTable;
       out ARoute: TMVCMinimalRoute): Boolean;
     // Tracks an object whose lifetime is bound to the engine. Idempotent:
@@ -371,6 +378,23 @@ type
     // Endpoint filter (chain-of-responsibility). Filters are stacked in
     // registration order: the first one Use'd is the outermost.
     function Use(const AFilter: TMVCEndpointFilter): TMVCRouteGroup<T>;
+
+    // Marks this group (and every route + nested sub-group it produces) as
+    // rkWeb: HTML endpoints excluded from OpenAPI by default. Returns the
+    // same group so it chains naturally with .Use(...) and .MapXxx(...).
+    //
+    //   lEngine.Root.AsWeb.Use(MemorySession(10)).MapGet('/', HomeHandler);
+    function AsWeb: TMVCRouteGroup<T>;
+
+    // Marks this group as rkApi (JSON, included in OpenAPI). Same as the
+    // default for fresh Root/Prefix groups, but useful for reverting a
+    // nested sub-group of an .AsWeb parent back to API semantics — e.g. a
+    // JSON autocomplete endpoint embedded in a web app's URL tree.
+    //
+    //   lEngine.Root.AsWeb
+    //     .Prefix('/search').AsApi
+    //     .MapGet('/users.json', SearchUsersHandler);
+    function AsApi: TMVCRouteGroup<T>;
 
     // GET
     function MapGet(const APath: string;
@@ -502,13 +526,6 @@ type
     function Prefix<T: class>(const APrefix: string; const AData: T;
       AOwns: Boolean = True): TMVCRouteGroup<T>; overload;
 
-    // Web endpoint group. Routes registered here render HTML, are excluded
-    // from OpenAPI by default, and have access to ViewData / RenderView.
-    function WebRoot: TMVCRouteGroup<TObject>;
-    function WebPrefix(const APrefix: string): TMVCRouteGroup<TObject>; overload;
-    function WebPrefix<T: class>(const APrefix: string; const AData: T;
-      AOwns: Boolean = True): TMVCRouteGroup<T>; overload;
-
     // Internal: wires a route into the registry from a TMVCRouteGroup<T>.
     function RegisterFromGroup(AVerb: TMVCHTTPMethodType; const APath: string;
       AThunk: TMVCMinimalThunk): TMVCMinimalRoute;
@@ -544,7 +561,7 @@ function RenderViews(const AViewNames: TArray<string>;
 // passing through the group it is attached to (and every nested sub-group, by
 // the standard filter-inheritance rules).
 //
-//   lEngine.WebRoot
+//   lEngine.Root.AsWeb
 //     .Use(MemorySession(10))         // 10-minute idle timeout, no HttpOnly
 //     .MapGet('/', HomeHandler);
 //
@@ -1025,15 +1042,45 @@ begin
   Result := True;
 end;
 
+// Score a route candidate against the request's Accept and Content-Type.
+// rkWeb prefers HTML responses and form/multipart bodies.
+// rkApi prefers JSON responses and JSON bodies.
+function ScoreRouteForNegotiation(AKind: TMVCRouteKind;
+  const AAcceptLower, AContentTypeLower: string): Integer;
+begin
+  Result := 0;
+  case AKind of
+    rkWeb:
+      begin
+        if Pos('text/html', AAcceptLower) > 0 then Inc(Result, 10);
+        if Pos('application/x-www-form-urlencoded', AContentTypeLower) > 0 then
+          Inc(Result, 5);
+        if Pos('multipart/form-data', AContentTypeLower) > 0 then Inc(Result, 5);
+      end;
+    rkApi:
+      begin
+        if Pos('application/json', AAcceptLower) > 0 then Inc(Result, 10);
+        if Pos('application/json', AContentTypeLower) > 0 then Inc(Result, 5);
+      end;
+  end;
+end;
+
 function TMVCMinimalRegistry.TryMatch(AVerb: TMVCHTTPMethodType;
-  const APath: string; const AParamsTable: TMVCRequestParamsTable;
+  const APath: string; const AAcceptHeader: string;
+  const AContentTypeHeader: string;
+  const AParamsTable: TMVCRequestParamsTable;
   out ARoute: TMVCMinimalRoute): Boolean;
 var
   I: Integer;
-  lRoute: TMVCMinimalRoute;
+  lRoute, lBest: TMVCMinimalRoute;
+  lCandidates: TArray<TMVCMinimalRoute>;
+  lAcceptL, lCtypeL: string;
+  lBestScore, lScore: Integer;
 begin
   Result := False;
   ARoute := nil;
+
+  // Pass 1: collect every route that matches the verb + path.
   for I := 0 to fRoutes.Count - 1 do
   begin
     lRoute := fRoutes[I];
@@ -1041,12 +1088,43 @@ begin
       Continue;
     AParamsTable.Clear;
     if MatchPath(lRoute.PathPattern, APath, AParamsTable) then
+      lCandidates := lCandidates + [lRoute];
+  end;
+
+  if Length(lCandidates) = 0 then
+  begin
+    AParamsTable.Clear;
+    Exit;
+  end;
+
+  // Single candidate: hot path. Repopulate AParamsTable and return.
+  if Length(lCandidates) = 1 then
+  begin
+    ARoute := lCandidates[0];
+    AParamsTable.Clear;
+    MatchPath(ARoute.PathPattern, APath, AParamsTable);
+    Exit(True);
+  end;
+
+  // Multiple candidates → content negotiation. Score each by Accept + Content-Type.
+  lAcceptL := LowerCase(AAcceptHeader);
+  lCtypeL := LowerCase(AContentTypeHeader);
+  lBest := lCandidates[0];
+  lBestScore := ScoreRouteForNegotiation(lBest.RouteKind, lAcceptL, lCtypeL);
+  for I := 1 to High(lCandidates) do
+  begin
+    lScore := ScoreRouteForNegotiation(lCandidates[I].RouteKind, lAcceptL, lCtypeL);
+    if lScore > lBestScore then
     begin
-      ARoute := lRoute;
-      Exit(True);
+      lBest := lCandidates[I];
+      lBestScore := lScore;
     end;
   end;
+
+  ARoute := lBest;
   AParamsTable.Clear;
+  MatchPath(ARoute.PathPattern, APath, AParamsTable);
+  Result := True;
 end;
 
 { -------------------------------------------------------------------------- }
@@ -1660,7 +1738,10 @@ begin
 
   try
     if not fRegistry.TryMatch(AContext.Request.HTTPMethod,
-      AContext.Request.PathInfo, lParamsTable, lRoute) then
+      AContext.Request.PathInfo,
+      AContext.Request.Headers['Accept'],
+      AContext.Request.Headers['Content-Type'],
+      lParamsTable, lRoute) then
     begin
       // No minimal-API route matched - let the regular controller router proceed.
       Exit;
@@ -1786,9 +1867,9 @@ end;
 
 function TMVCEngineMinimalAPIHelper.Root: TMVCRouteGroup<TObject>;
 begin
-  // Always rkApi — JSON endpoints. For HTML/web endpoints use WebRoot.
+  // Always starts as rkApi. Call .AsWeb on the returned group for HTML routes.
   GetOrCreateMiddleware;
-  Result := TMVCRouteGroup<TObject>.Create(Self, '', nil);  // defaults to rkApi
+  Result := TMVCRouteGroup<TObject>.Create(Self, '', nil);
 end;
 
 function TMVCEngineMinimalAPIHelper.Prefix(
@@ -1809,30 +1890,6 @@ begin
   if AOwns and (AData <> nil) then
     lMW.Registry.TrackOwned(AData);
   Result := TMVCRouteGroup<T>.Create(Self, APrefix, AData);
-end;
-
-function TMVCEngineMinimalAPIHelper.WebRoot: TMVCRouteGroup<TObject>;
-begin
-  GetOrCreateMiddleware;
-  Result := TMVCRouteGroup<TObject>.Create(Self, '', nil, rkWeb);
-end;
-
-function TMVCEngineMinimalAPIHelper.WebPrefix(
-  const APrefix: string): TMVCRouteGroup<TObject>;
-begin
-  GetOrCreateMiddleware;
-  Result := TMVCRouteGroup<TObject>.Create(Self, APrefix, nil, rkWeb);
-end;
-
-function TMVCEngineMinimalAPIHelper.WebPrefix<T>(const APrefix: string;
-  const AData: T; AOwns: Boolean): TMVCRouteGroup<T>;
-var
-  lMW: TMVCMinimalAPIMiddleware;
-begin
-  lMW := GetOrCreateMiddleware;
-  if AOwns and (AData <> nil) then
-    lMW.Registry.TrackOwned(AData);
-  Result := TMVCRouteGroup<T>.Create(Self, APrefix, AData, rkWeb);
 end;
 
 { -------------------------------------------------------------------------- }
@@ -1883,17 +1940,28 @@ begin
   // ASP.NET Core MapGroup and FastAPI include_router: cross-cutting
   // concerns (logging, auth, rate-limit) added on a parent group are seen
   // by every nested route, regardless of whether the typed data changed.
-  // The parent's RouteKind also propagates: a WebPrefix nested under a
-  // WebPrefix stays rkWeb, even when the typed data slot changes.
+  // The parent's RouteKind also propagates: a child of an .AsWeb group stays
+  // rkWeb, even when the typed data slot changes.
+  Result := fEngine.Prefix<U>(fPrefix + APath, AData, AOwns);
   if fRouteKind = rkWeb then
-    Result := fEngine.WebPrefix<U>(fPrefix + APath, AData, AOwns)
-  else
-    Result := fEngine.Prefix<U>(fPrefix + APath, AData, AOwns);
+    Result := Result.AsWeb;
   for lFilter in fFilters do
     Result := Result.Use(lFilter);
 end;
 
 // ----- endpoint filter ----------------------------------------------------
+
+function TMVCRouteGroup<T>.AsWeb: TMVCRouteGroup<T>;
+begin
+  Result := Self;
+  Result.fRouteKind := rkWeb;
+end;
+
+function TMVCRouteGroup<T>.AsApi: TMVCRouteGroup<T>;
+begin
+  Result := Self;
+  Result.fRouteKind := rkApi;
+end;
 
 function TMVCRouteGroup<T>.Use(const AFilter: TMVCEndpointFilter): TMVCRouteGroup<T>;
 var

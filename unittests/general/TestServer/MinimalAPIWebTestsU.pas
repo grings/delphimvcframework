@@ -52,8 +52,8 @@ type
 
 procedure RegisterMinimalAPIWebRoutes(AEngine: TMVCEngine);
 begin
-  // -- routing test: simple WebRoot GET returns text/html
-  AEngine.WebRoot.MapGet('/minimal-web/hello',
+  // -- routing test: simple .AsWeb GET returns text/html
+  AEngine.Root.AsWeb.MapGet('/minimal-web/hello',
     function: IMVCResponse
     begin
       ViewData['who'] := 'world';
@@ -61,7 +61,7 @@ begin
     end);
 
   // -- ViewData test: round-trip a few keys via Ctx.ViewData
-  AEngine.WebRoot.MapGet<TWebContext>('/minimal-web/viewdata',
+  AEngine.Root.AsWeb.MapGet<TWebContext>('/minimal-web/viewdata',
     function (Ctx: TWebContext): IMVCResponse
     begin
       Ctx.ViewData['a'] := 'alpha';
@@ -70,7 +70,7 @@ begin
     end);
 
   // -- form binding test
-  AEngine.WebRoot.MapPost<TLoginForm>('/minimal-web/login',
+  AEngine.Root.AsWeb.MapPost<TLoginForm>('/minimal-web/login',
     function (F: TLoginForm): IMVCResponse
     begin
       ViewData['username'] := F.Username;
@@ -79,7 +79,7 @@ begin
     end);
 
   // -- multi-value form binding: [MVCFromContentField] on TArray<string>
-  AEngine.WebRoot.MapPost<TMultiValueForm>('/minimal-web/multi',
+  AEngine.Root.AsWeb.MapPost<TMultiValueForm>('/minimal-web/multi',
     function (F: TMultiValueForm): IMVCResponse
     begin
       ViewData['count'] := IntToStr(Length(F.Tags));
@@ -95,7 +95,7 @@ begin
     end);
 
   // -- filter renders error page
-  AEngine.WebRoot
+  AEngine.Root.AsWeb
     .Use(
       function (const Ctx: TWebContext;
         const Next: TMVCEndpointFilterNext): IMVCResponse
@@ -117,23 +117,36 @@ begin
     begin
       Result := Ok('api');
     end);
-  AEngine.WebRoot.MapGet('/minimal-web/web-side',
+  AEngine.Root.AsWeb.MapGet('/minimal-web/web-side',
     function: IMVCResponse
     begin
       Result := RenderView('minimal_web_side');
     end);
-  AEngine.WebRoot.MapGet('/minimal-web/web-visible',
+  AEngine.Root.AsWeb.MapGet('/minimal-web/web-visible',
     function: IMVCResponse
     begin
       Result := RenderView('minimal_web_side');
     end).WithOpenAPI(True);
 
   // -- threadvar isolation: parameterised endpoint that echoes a marker
-  AEngine.WebRoot.MapGet<string>('/minimal-web/iso/($marker)',
+  AEngine.Root.AsWeb.MapGet<string>('/minimal-web/iso/($marker)',
     function (Marker: string): IMVCResponse
     begin
       ViewData['marker'] := Marker;
       Result := RenderView('minimal_web_iso');
+    end);
+
+  // -- content negotiation: same VERB + PATH, two RouteKinds. The dispatcher
+  // picks rkApi when Accept says application/json, rkWeb when text/html.
+  AEngine.Root.MapGet('/minimal-web/negotiate',
+    function: IMVCResponse
+    begin
+      Result := Ok('negotiate-api');
+    end);
+  AEngine.Root.AsWeb.MapGet('/minimal-web/negotiate',
+    function: IMVCResponse
+    begin
+      Result := RenderView('minimal_web_negotiate');
     end);
 end;
 
