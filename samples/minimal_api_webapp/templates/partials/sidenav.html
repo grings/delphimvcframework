@@ -1,9 +1,10 @@
 <script>
     const highlightMenuItem = (evt) => {
         const target = evt.target.closest('.nav-link');
-        if (!target || !target.parentElement) return;
-        const items = target.parentElement.querySelectorAll('.nav-link');
-        items.forEach((item) => item.classList.remove('selected'));
+        if (!target) return;
+        const sidebar = target.closest('.app-sidebar');
+        if (!sidebar) return;
+        sidebar.querySelectorAll('.nav-link').forEach((item) => item.classList.remove('selected'));
         target.classList.add('selected');
     };
 </script>
@@ -14,6 +15,8 @@
         <a class="nav-link" hx-get="/users"     hx-push-url="true"><i class="bi bi-people"></i> Users</a>
         <a class="nav-link" hx-get="/posts"     hx-push-url="true"><i class="bi bi-card-text"></i> Posts</a>
         <a class="nav-link" hx-get="/customers" hx-push-url="true"><i class="bi bi-person-vcard"></i> Customers</a>
+    </nav>
+    <nav class="nav flex-column app-sidebar-footer">
         <a class="nav-link" href="/login"><i class="bi bi-box-arrow-in-right"></i> Login</a>
         <a class="nav-link" href="/admin/"><i class="bi bi-shield-lock"></i> Admin</a>
     </nav>

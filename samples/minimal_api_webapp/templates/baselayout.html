@@ -15,7 +15,11 @@
     <style>
         body { min-height: 100vh; }
         .app-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
-        .app-sidebar { background: #0d3b66; color: #fff; padding: 1rem 0; }
+        .app-sidebar {
+            background: #0d3b66; color: #fff;
+            padding: 1rem 0;
+            display: flex; flex-direction: column;
+        }
         .app-sidebar .brand {
             display: block; padding: 0 1rem 1rem;
             font-weight: 600; font-size: 1.1rem;
@@ -32,12 +36,27 @@
             color: #fff;
         }
         .app-sidebar .nav-link.selected { background: #1d6fa5; color: #fff; }
+        .app-sidebar-footer {
+            margin-top: auto;
+            padding-top: .5rem;
+            border-top: 1px solid rgba(255,255,255,.15);
+        }
         .app-main { padding: 1.5rem 2rem; background: #f7f9fc; }
         @media (max-width: 768px) {
             .app-shell { grid-template-columns: 1fr; }
-            .app-sidebar { display: flex; overflow-x: auto; padding: .5rem; }
+            .app-sidebar {
+                flex-direction: row; overflow-x: auto;
+                padding: .5rem;
+            }
             .app-sidebar .brand { display: none; }
+            .app-sidebar .nav { flex-direction: row !important; }
             .app-sidebar .nav-link { white-space: nowrap; }
+            .app-sidebar-footer {
+                margin-top: 0; margin-left: auto;
+                padding-top: 0; padding-left: .5rem;
+                border-top: 0;
+                border-left: 1px solid rgba(255,255,255,.15);
+            }
         }
     </style>
 </head>
