@@ -540,6 +540,20 @@ function RenderView(const AViewName: string;
 function RenderViews(const AViewNames: TArray<string>;
   const AUseCommonHeadersAndFooters: Boolean = True): IMVCResponse;
 
+// Returns a filter that wires an in-memory session factory onto every request
+// passing through the group it is attached to (and every nested sub-group, by
+// the standard filter-inheritance rules).
+//
+//   lEngine.WebRoot
+//     .Use(MemorySession(10))         // 10-minute idle timeout, no HttpOnly
+//     .MapGet('/', HomeHandler);
+//
+// The factory is owned by the filter via an interface-managed holder, so it is
+// freed when the filter is dropped (typically engine shutdown). The session
+// itself is read/written via the usual TWebContext.Session API.
+function MemorySession(const ATimeoutInMinutes: Integer = 0;
+  const AHttpOnly: Boolean = False): TMVCEndpointFilter;
+
 implementation
 
 uses
@@ -549,8 +563,45 @@ uses
   MVCFramework.Serializer.Commons,
   MVCFramework.Serializer.Intf,
   MVCFramework.Serializer.JsonDataObjects,
+  MVCFramework.Session,
   MVCFramework.Validation,
   MVCFramework.ValidationEngine;
+
+type
+  // Holds the lifetime of a session factory for the MemorySession filter.
+  // The filter closure captures an ISessionFactoryHolder reference; when the
+  // closure is released (filter dropped at engine shutdown), the interface's
+  // refcount drops to zero and the destructor frees the underlying factory.
+  ISessionFactoryHolder = interface
+    ['{8A0E3CD2-9F7B-4F9E-9E61-2D5B3D0B4B41}']
+    function Factory: TMVCWebSessionFactory;
+  end;
+
+  TSessionFactoryHolder = class(TInterfacedObject, ISessionFactoryHolder)
+  strict private
+    fFactory: TMVCWebSessionFactory;
+  public
+    constructor Create(AFactory: TMVCWebSessionFactory);
+    destructor Destroy; override;
+    function Factory: TMVCWebSessionFactory;
+  end;
+
+constructor TSessionFactoryHolder.Create(AFactory: TMVCWebSessionFactory);
+begin
+  inherited Create;
+  fFactory := AFactory;
+end;
+
+destructor TSessionFactoryHolder.Destroy;
+begin
+  fFactory.Free;
+  inherited;
+end;
+
+function TSessionFactoryHolder.Factory: TMVCWebSessionFactory;
+begin
+  Result := fFactory;
+end;
 
 threadvar
   GCurrentContext: TWebContext;
@@ -615,6 +666,27 @@ begin
   lRenderer := CurrentMinimalRendererOrFail;
   lHtml := lRenderer.RenderViews(AViewNames, AUseCommonHeadersAndFooters);
   Result := BuildHTMLResponse(lHtml);
+end;
+
+function MemorySession(const ATimeoutInMinutes: Integer;
+  const AHttpOnly: Boolean): TMVCEndpointFilter;
+var
+  lHolder: ISessionFactoryHolder;
+begin
+  // Allocate the factory and wrap it in an interface-managed holder. The
+  // closure below captures `lHolder` (an interface), so the holder's lifetime
+  // follows the closure's: when the filter is dropped (engine shutdown) the
+  // closure is freed, the captured interface refcount drops to zero, and the
+  // holder's destructor frees the factory.
+  lHolder := TSessionFactoryHolder.Create(
+    TMVCWebSessionMemoryFactory.Create(AHttpOnly, ATimeoutInMinutes));
+  Result :=
+    function (const AContext: TWebContext;
+              const ANext: TMVCEndpointFilterNext): IMVCResponse
+    begin
+      AContext.SetSessionFactory(lHolder.Factory);
+      Result := ANext();
+    end;
 end;
 
 { -------------------------------------------------------------------------- }

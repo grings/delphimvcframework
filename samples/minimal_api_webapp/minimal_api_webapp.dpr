@@ -40,7 +40,6 @@ uses
   MVCFramework.Commons,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
-  MVCFramework.Middleware.Session,
   MVCFramework.View.Renderers.TemplatePro,
   MVCFramework.MinimalAPI in '..\..\sources\MVCFramework.MinimalAPI.pas',
   HandlersU in 'HandlersU.pas',
@@ -68,15 +67,12 @@ begin
       Config[TMVCConfigKey.ViewCache] := 'false';
     end);
   try
-    // Session middleware (memory backend, 10 minutes timeout) for the
-    // RequireLogin filter recipe. Add BEFORE registering routes so the
-    // minimal-API middleware sees it on the chain.
-    lEngine.AddMiddleware(UseMemorySessionMiddleware(10));
-
     // TemplatePro view engine.
     lEngine.SetViewEngine(TMVCTemplateProViewEngine);
 
-    // Wire the lambda routes (WebRoot + WebPrefix groups).
+    // Wire the lambda routes (WebRoot + WebPrefix groups). Session is added
+    // inside RegisterRoutes as a group-level filter via MemorySession(...),
+    // no classic IMVCMiddleware involved.
     RegisterRoutes(lEngine);
 
     WriteLn(Format('Server starting on http://localhost:%d (Indy Direct)', [PORT]));

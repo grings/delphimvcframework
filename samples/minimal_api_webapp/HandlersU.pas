@@ -65,8 +65,12 @@ begin
   // ---------------------------------------------------------------------------
   // Public web routes (no auth) — WebRoot stamps every route as rkWeb, so
   // none of them surface in the OpenAPI spec.
+  //
+  // MemorySession is a plain group filter — every nested group (e.g. /admin
+  // below) inherits it through the normal filter-inheritance rules. No
+  // classic IMVCMiddleware involved.
   // ---------------------------------------------------------------------------
-  lWeb := AEngine.WebRoot;
+  lWeb := AEngine.WebRoot.Use(MemorySession(10));
 
   lWeb.MapGet<TWebContext>('/',
     function (Ctx: TWebContext): IMVCResponse
@@ -142,11 +146,12 @@ begin
     end);
 
   // ---------------------------------------------------------------------------
-  // Session-protected admin subtree. The .Use(RequireLogin(...)) filter sits
-  // ahead of every handler in this group; if it short-circuits with a
-  // redirect, the handler never runs.
+  // Session-protected admin subtree. Built as a nested Prefix of lWeb so it
+  // inherits the MemorySession filter applied above. The .Use(RequireLogin)
+  // filter sits ahead of every handler in this group; if it short-circuits
+  // with a redirect, the handler never runs.
   // ---------------------------------------------------------------------------
-  lAdmin := AEngine.WebPrefix('/admin').Use(RequireLogin('/login'));
+  lAdmin := lWeb.Prefix('/admin').Use(RequireLogin('/login'));
 
   lAdmin.MapGet<TWebContext>('/',
     function (Ctx: TWebContext): IMVCResponse
