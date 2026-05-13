@@ -5,84 +5,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://unpkg.com/htmx.org@latest"></script>
-    <title>HTMX App</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"
-    />    
+    <title>{{block "title"}}DMVCFramework Minimal API WebApp{{endblock}}</title>
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    {{block "extra-head"}}{{endblock}}
     <style>
-        :root {
-            --pico-spacing: 0rem;
+        body { min-height: 100vh; }
+        .app-shell { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+        .app-sidebar { background: #0d3b66; color: #fff; padding: 1rem 0; }
+        .app-sidebar .brand {
+            display: block; padding: 0 1rem 1rem;
+            font-weight: 600; font-size: 1.1rem;
+            border-bottom: 1px solid rgba(255,255,255,.15);
+            margin-bottom: .5rem;
         }
-
-        body {
-            margin: 0px;
+        .app-sidebar .nav-link {
+            color: rgba(255,255,255,.85); border-radius: 0;
+            padding: .55rem 1rem;
         }
-
-        .parent {                  
-            margin: 0px;            
-            display: grid;
-            grid-template-columns: 10rem auto;
-            grid-template-rows: auto;
-            grid-column-gap: 0px;
-            grid-row-gap: 0px;            
-            height: 100vh;
+        .app-sidebar .nav-link:hover { background: rgba(255,255,255,.10); color: #fff; }
+        .app-sidebar .nav-link.selected { background: #1d6fa5; color: #fff; }
+        .app-main { padding: 1.5rem 2rem; background: #f7f9fc; }
+        @media (max-width: 768px) {
+            .app-shell { grid-template-columns: 1fr; }
+            .app-sidebar { display: flex; overflow-x: auto; padding: .5rem; }
+            .app-sidebar .brand { display: none; }
+            .app-sidebar .nav-link { white-space: nowrap; }
         }
-
-        #sidenav {
-            padding: 0.5rem;
-            background-color: rgb(1, 76, 117);
-        }
-
-        #sidenav > a {
-            padding : 0.3rem;            
-            padding-left: 0.5rem;
-            color: white;
-            display: block; 
-            cursor: pointer;        
-            text-decoration: none;  
-            margin-top: 0.2rem;  
-        }
-
-        #sidenav > .selected {
-            background-color: rgb(0, 165, 248);
-        }
-
-        #sidenav > a:hover {
-            background-color: rgb(1, 140, 212);
-        }
-
-        .main {
-            padding: 1rem;
-        }
-
-        .right {
-            text-align: end;
-        }
-
-        .center {
-            text-align: center;
-        }        
-
-        table, tr, td, th{
-            padding: 0.2rem;
-        }
-
     </style>
 </head>
 
 <body>
-    <main class="container-fluid">
-        <div class="parent">
-            <!-- Side Navigation -->
-            {{include "partials/sidenav.html"}}
-            <!-- Main Content Area -->
-            <div class="main" id="main">
-{{endif}}            
-{{block "body"}}Please, override block "body"{{endblock}}
+    <div class="app-shell">
+        {{include "partials/sidenav.html"}}
+        <main class="app-main" id="main">
+{{endif}}
+{{block "body"}}<div class="alert alert-warning">Please override block "body".</div>{{endblock}}
 {{if ispage}}
-            </div>
-        </div>
-    </main>
+        </main>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {{block "extra-scripts"}}{{endblock}}
 </body>
 </html>
 {{endif}}
