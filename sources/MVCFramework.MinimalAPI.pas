@@ -53,7 +53,8 @@
 //   * Class in container     -> DI service
 //   * Class not in container -> body JSON (POST/PUT/PATCH) or query (GET/DELETE)
 //   * Record                 -> hybrid binding via [MVCFromBody]/[MVCFromQueryString]/
-//                               [MVCFromHeader]/[MVCFromCookie] on fields
+//                               [MVCFromHeader]/[MVCFromCookie]/[MVCFromContentField]
+//                               on fields
 //   * Primitive (Integer, Int64, string, Boolean, Double, TGUID, TDateTime...)
 //                            -> route param (if present), else query string
 //
@@ -1043,6 +1044,7 @@ var
   lFromQuery: MVCFromQueryStringAttribute;
   lFromHeader: MVCFromHeaderAttribute;
   lFromCookie: MVCFromCookieAttribute;
+  lFromContentField: MVCFromContentFieldAttribute;
   lStrValue: string;
   lFieldValue: TValue;
   lBuf: array of Byte;
@@ -1069,6 +1071,7 @@ begin
       lFromQuery := nil;
       lFromHeader := nil;
       lFromCookie := nil;
+      lFromContentField := nil;
 
       for lAttr in lField.GetAttributes do
       begin
@@ -1079,7 +1082,9 @@ begin
         else if lAttr is MVCFromHeaderAttribute then
           lFromHeader := MVCFromHeaderAttribute(lAttr)
         else if lAttr is MVCFromCookieAttribute then
-          lFromCookie := MVCFromCookieAttribute(lAttr);
+          lFromCookie := MVCFromCookieAttribute(lAttr)
+        else if lAttr is MVCFromContentFieldAttribute then
+          lFromContentField := MVCFromContentFieldAttribute(lAttr);
       end;
 
       if lFromBody <> nil then
@@ -1126,6 +1131,27 @@ begin
           lStrValue := lFromCookie.DefaultValueAsString;
         lFieldValue := TMVCMinimalArgResolver.ConvertStringTo(lStrValue, lField.FieldType.Handle);
         lField.SetValue(lAddr, lFieldValue);
+        lBound := True;
+      end
+      else if lFromContentField <> nil then
+      begin
+        // Mirror the classic controller (MVCFramework.pas) behavior:
+        // TArray<string> fields bind to ContentParamsMulti to support
+        // multi-value form fields (e.g. <select multiple>, repeated checkboxes).
+        if lField.FieldType.QualifiedName.StartsWith('System.TArray<System.', True) then
+        begin
+          lField.SetValue(lAddr,
+            TValue.From< TArray<string> >(
+              AContext.Request.ContentParamsMulti[lFromContentField.ParamName]));
+        end
+        else
+        begin
+          lStrValue := AContext.Request.ContentParam(lFromContentField.ParamName);
+          if lStrValue.IsEmpty and lFromContentField.CanBeUsedADefaultValue then
+            lStrValue := lFromContentField.DefaultValueAsString;
+          lFieldValue := TMVCMinimalArgResolver.ConvertStringTo(lStrValue, lField.FieldType.Handle);
+          lField.SetValue(lAddr, lFieldValue);
+        end;
         lBound := True;
       end;
 
