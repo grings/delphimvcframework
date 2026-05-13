@@ -190,10 +190,7 @@ type
     function ConvertPathPattern(const APattern: string;
       out APathParams: TArray<string>): string;
     function VerbToString(AVerb: TMVCHTTPMethodType): string;
-    function IsBodyMethod(AVerb: TMVCHTTPMethodType): Boolean;
     function ReadClassPath(AClass: TClass; const AURLSegment: string): string;
-    function ReadActionPath(AMethod: TRttiMethod;
-      out ABindMethods: TMVCHTTPMethods): Boolean;
     procedure EmitControllerOperation(const APathsObject: TJsonObject;
       const ASchemaBuilder: TMVCOpenAPISchemaBuilder;
       AControllerClass: TClass;
@@ -1028,12 +1025,6 @@ begin
   end;
 end;
 
-function TMVCControllerOpenAPISource.IsBodyMethod(
-  AVerb: TMVCHTTPMethodType): Boolean;
-begin
-  Result := AVerb in [httpPOST, httpPUT, httpPATCH];
-end;
-
 function TMVCControllerOpenAPISource.ConvertPathPattern(
   const APattern: string; out APathParams: TArray<string>): string;
 var
@@ -1085,24 +1076,6 @@ begin
       Result := MVCPathAttribute(lAttr).Path;
       Break;
     end;
-end;
-
-function TMVCControllerOpenAPISource.ReadActionPath(AMethod: TRttiMethod;
-  out ABindMethods: TMVCHTTPMethods): Boolean;
-var
-  lAttr: TCustomAttribute;
-  lPathFound: Boolean;
-begin
-  lPathFound := False;
-  ABindMethods := [];
-  for lAttr in AMethod.GetAttributes do
-  begin
-    if lAttr is MVCPathAttribute then
-      lPathFound := True;
-    if lAttr is MVCHTTPMethodsAttribute then
-      ABindMethods := MVCHTTPMethodsAttribute(lAttr).MVCHTTPMethods;
-  end;
-  Result := lPathFound and (ABindMethods <> []);
 end;
 
 procedure TMVCControllerOpenAPISource.EmitControllerOperation(
@@ -1558,7 +1531,6 @@ var
   lBuilder: TMVCOpenAPISchemaBuilder;
   lSource: IMVCOpenAPISource;
 begin
-  Result := nil;
   lDoc := TJsonObject.Create;
   try
     lDoc.S['openapi'] := OPENAPI_VERSION;
