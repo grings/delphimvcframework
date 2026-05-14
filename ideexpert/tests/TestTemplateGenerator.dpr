@@ -765,9 +765,10 @@ begin
 
     // Create templates folder for server-side views
     // Generate in project root (not in bin/) so they're accessible during development
-    if AConfig.B[TConfigKey.program_ssv_mustache] or
-       AConfig.B[TConfigKey.program_ssv_templatepro] or
-       AConfig.B[TConfigKey.program_ssv_webstencils] then
+    if (AConfig.B[TConfigKey.program_ssv_mustache] or
+        AConfig.B[TConfigKey.program_ssv_templatepro] or
+        AConfig.B[TConfigKey.program_ssv_webstencils]) and
+       not AConfig.B['program.minimal_api.web'] then
     begin
       LogVerbose('Creating templates folder with header, footer and index...');
       ForceDirectories(TPath.Combine(AOutputDir, 'templates'));
@@ -779,6 +780,44 @@ begin
       TFile.WriteAllText(
         TPath.Combine(AOutputDir, 'templates\index.' + LTemplateExt),
         TTestTemplateEngine.Render('views\index_complete_view.tpro', AConfig));
+    end;
+
+    // Minimal API WebApp view set. Separate from the controller-oriented SSV
+    // block above: minimal-web has no THomeController/about views — it ships a
+    // navbar baselayout plus home / login / admin / time(fragment), matching the
+    // routes in routes_minimal_web.pas.tpro. Files are runtime TemplatePro
+    // templates: loaded raw (NOT compiled — they contain runtime extends/block
+    // directives), only wizard-time placeholders replaced.
+    if AConfig.B['program.minimal_api.web'] then
+    begin
+      LogVerbose('Creating Minimal API WebApp view set...');
+      ForceDirectories(TPath.Combine(AOutputDir, 'templates'));
+      ForceDirectories(TPath.Combine(AOutputDir, 'templates\pages'));
+
+      TFile.WriteAllText(
+        TPath.Combine(AOutputDir, 'templates\baselayout.html'),
+        TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
+          'views\minimal_baselayout.tpro'), TEncoding.UTF8)
+          .Replace('{{:program_name}}', AConfig.S[TConfigKey.program_name]));
+      TFile.WriteAllText(
+        TPath.Combine(AOutputDir, 'templates\pages\home.html'),
+        TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
+          'views\minimal_home.tpro'), TEncoding.UTF8)
+          .Replace('{{:program_name}}', AConfig.S[TConfigKey.program_name]));
+      TFile.WriteAllText(
+        TPath.Combine(AOutputDir, 'templates\pages\login.html'),
+        TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
+          'views\minimal_login.tpro'), TEncoding.UTF8)
+          .Replace('{{:program_name}}', AConfig.S[TConfigKey.program_name]));
+      TFile.WriteAllText(
+        TPath.Combine(AOutputDir, 'templates\pages\admin_home.html'),
+        TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
+          'views\minimal_admin.tpro'), TEncoding.UTF8)
+          .Replace('{{:program_name}}', AConfig.S[TConfigKey.program_name]));
+      TFile.WriteAllText(
+        TPath.Combine(AOutputDir, 'templates\pages\time.html'),
+        TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
+          'views\minimal_time.tpro'), TEncoding.UTF8));
     end;
 
     // Create .gitignore file

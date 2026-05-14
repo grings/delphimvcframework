@@ -594,7 +594,8 @@ begin
     // Determine template file extension
     LTemplateExt := AConfig.S['template.extension'];
 
-    if AConfig.B[TConfigKey.program_ssv_templatepro] then
+    if AConfig.B[TConfigKey.program_ssv_templatepro] and
+       not AConfig.B['program.minimal_api.web'] then
     begin
       // TemplatePro: use template inheritance pattern
       // These view files contain runtime TemplatePro directives (extends, block)
@@ -647,6 +648,33 @@ begin
         RenderTemplate('views\index_complete_view.tpro', AConfig),
         TEncoding.UTF8);
     end;
+  end;
+
+  // Minimal API WebApp view set. Separate from the controller-oriented SSV
+  // block above: minimal-web has no THomeController/about views — it ships a
+  // navbar baselayout plus home / login / admin / time(fragment), matching the
+  // routes in routes_minimal_web.pas.tpro. Files are runtime TemplatePro
+  // templates: loaded raw, only wizard-time placeholders replaced.
+  if AConfig.B['program.minimal_api.web'] then
+  begin
+    LTemplatesPath := TPath.Combine(LBinPath, 'templates');
+    TDirectory.CreateDirectory(LTemplatesPath);
+    TDirectory.CreateDirectory(TPath.Combine(LTemplatesPath, 'pages'));
+
+    SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'baselayout.html',
+      LoadTemplate('views\minimal_baselayout.tpro')
+        .Replace('{{:program_name}}', AProjectName));
+    SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'pages' + PathDelim + 'home.html',
+      LoadTemplate('views\minimal_home.tpro')
+        .Replace('{{:program_name}}', AProjectName));
+    SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'pages' + PathDelim + 'login.html',
+      LoadTemplate('views\minimal_login.tpro')
+        .Replace('{{:program_name}}', AProjectName));
+    SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'pages' + PathDelim + 'admin_home.html',
+      LoadTemplate('views\minimal_admin.tpro')
+        .Replace('{{:program_name}}', AProjectName));
+    SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'pages' + PathDelim + 'time.html',
+      LoadTemplate('views\minimal_time.tpro'));
   end;
 
   // Create .gitignore file
