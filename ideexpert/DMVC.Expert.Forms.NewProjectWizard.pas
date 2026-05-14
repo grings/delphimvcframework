@@ -435,24 +435,33 @@ begin
     chkMinimalAPI.Enabled := False;
     chkCreateCRUDMethods.Checked := True;
     chkCreateCRUDMethods.Enabled := False;
-    // Hide controls with no meaning when no controller class is generated.
+    // Hide controls with no meaning when no controller class is generated —
+    // each edit together with its caption label.
     edtControllerClassName.Visible := False;
+    lblClassName.Visible := False;
+    edtWebModuleName.Visible := False;
+    lblWbModule.Visible := False;
     chkCreateIndexMethod.Visible := False;
     chkCreateActionFiltersMethods.Visible := False;
     chkProfileActions.Visible := False;
     chkJSONRPC.Visible := False;
     EdtJSONRPCClassName.Visible := False;
+    lblJSONRPCClassName.Visible := False;
   end
   else
   begin
     chkMinimalAPI.Enabled := True;
     chkCreateCRUDMethods.Enabled := True;
     edtControllerClassName.Visible := True;
+    lblClassName.Visible := True;
+    edtWebModuleName.Visible := True;
+    lblWbModule.Visible := True;
     chkCreateIndexMethod.Visible := True;
     chkCreateActionFiltersMethods.Visible := True;
     chkProfileActions.Visible := True;
     chkJSONRPC.Visible := True;
     EdtJSONRPCClassName.Visible := True;
+    lblJSONRPCClassName.Visible := True;
   end;
 end;
 
