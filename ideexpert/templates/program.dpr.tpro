@@ -41,7 +41,7 @@ uses
 {{if controller_main_generate}}
   {{:controller_unit_name}} in '{{:controller_unit_name}}.pas',
 {{endif}}
-{{if program_ssv_any}}
+{{if @(program_ssv_any and (not program_minimal_api))}}
   Controllers.APIU in 'Controllers.APIU.pas',
 {{endif}}
 {{if controller_crud_methods_generate}}
