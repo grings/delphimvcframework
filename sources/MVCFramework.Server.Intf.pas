@@ -44,6 +44,13 @@ type
   /// </summary>
   TMVCHTTPSConfigurator = reference to procedure(AServer: IMVCServer);
 
+  /// <summary>
+  /// Callback invoked after a TMVCEngine is created, to add controllers
+  /// and middleware. Shared by the server factory and every IMVCServer
+  /// implementation so the signatures stay assignment-compatible.
+  /// </summary>
+  TMVCEngineConfigProc = TProc<TMVCEngine>;
+
   IMVCServer = interface
     ['{A8D7B2C1-E5F4-4A3B-9C6D-1F2E3A4B5C6D}']
     procedure SetEngine(AEngine: TMVCEngine);

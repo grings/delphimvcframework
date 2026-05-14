@@ -34,8 +34,6 @@ uses
   MVCFramework, MVCFramework.Server.Intf, MVCFramework.Commons;
 
 type
-  TMVCEngineConfigProc = TProc<TMVCEngine>;
-
   /// <summary>
   /// IMVCServer implementation using WebBroker (TIdHTTPWebBrokerBridge).
   /// WebBroker manages the TWebModule lifecycle internally. This server

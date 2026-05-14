@@ -43,8 +43,6 @@ uses
   MVCFramework, MVCFramework.Server.Intf, MVCFramework.Commons;
 
 type
-  TMVCEngineConfigProc = reference to procedure(AEngine: TMVCEngine);
-
   TMVCServerFactory = class
   public
     /// <summary>
