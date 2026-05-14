@@ -14,7 +14,7 @@ uses
 {{if controller_main_generate}}
   {{:controller_unit_name}},
 {{endif}}
-{{if program_ssv_any}}
+{{if @(program_ssv_any and (not program_minimal_api))}}
   Controllers.APIU,
 {{endif}}
 {{if @(controller_crud_methods_generate and (not program_minimal_api))}}
@@ -96,7 +96,7 @@ var
   LSigner: IJWTSigner;
 {{endif}}
 {{endif}}
-{{if @(program_ssv_any or webmodule_middleware_staticfiles)}}
+{{if @((program_ssv_any or webmodule_middleware_staticfiles) and (not program_minimal_api))}}
   LWwwPath: string;
 {{endif}}
 {{endif}}
@@ -111,7 +111,7 @@ begin
 {{if controller_main_generate}}
   AEngine.AddController({{:controller_classname}});
 {{endif}}
-{{if program_ssv_any}}
+{{if @(program_ssv_any and (not program_minimal_api))}}
   AEngine.AddController(TAPIController);
 {{endif}}
 {{if @(controller_crud_methods_generate and (not program_minimal_api))}}
@@ -195,7 +195,7 @@ begin
 {{endif}}
 
   // Middleware
-{{if program_ssv_any}}
+{{if @(program_ssv_any and (not program_minimal_api))}}
   // Redirect root to web UI
   AEngine.AddMiddleware(TMVCRedirectMiddleware.Create(['/'], '/web'));
 {{endif}}
@@ -253,7 +253,7 @@ begin
 {{if webmodule_middleware_analytics}}
   AEngine.AddMiddleware(TMVCAnalyticsMiddleware.Create(GetAnalyticsDefaultLogger));
 {{endif}}
-{{if @(program_ssv_any or webmodule_middleware_staticfiles)}}
+{{if @((program_ssv_any or webmodule_middleware_staticfiles) and (not program_minimal_api))}}
   AEngine.AddMiddleware(TMVCStaticFilesMiddleware.Create('/static', LWwwPath));
 {{endif}}
 {{if webmodule_middleware_trace}}
