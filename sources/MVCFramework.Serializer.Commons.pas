@@ -480,6 +480,20 @@ function ISOTimeStampToDateTime(const ADateTime: string): TDateTime;
 function ISODateToDate(const ADate: string): TDate;
 function ISOTimeToTime(const ATime: string): TTime;
 
+/// <summary>
+/// Converts a raw string (route segment, query string, header, cookie,
+/// content field) into a TValue of the requested type. Shared by the
+/// classic controller parameter binder (TMVCEngine.GetActualParam) and the
+/// minimal-API argument resolver, so both surfaces coerce values
+/// identically. Raises EMVCException(BadRequest) on a malformed value or an
+/// unsupported target type. AParamNameForError, when provided, is appended
+/// to the error message to ease diagnostics.
+/// Supported: string, Integer, Int64, Boolean (true/yes/1, false/no/0/empty),
+/// Double/Single/Extended, TDate, TTime, TDateTime, TGUID.
+/// </summary>
+function MVCStringToTValue(const AValue: string; const ATypeInfo: PTypeInfo;
+  const AParamNameForError: string = ''): TValue;
+
 const
   JSONNameLowerCase = TMVCNameCase.ncLowerCase deprecated 'Use MVCNameCaseAttribute(ncLowerCase)';
   JSONNameUpperCase = ncUpperCase deprecated 'Use MVCNameCaseAttribute(ncUpperCase)';
@@ -619,6 +633,144 @@ function ISOTimeToTime(const ATime: string): TTime;
 begin
   Result := EncodeTime(StrToInt(Copy(ATime, 1, 2)), StrToInt(Copy(ATime, 4, 2)),
     StrToInt(Copy(ATime, 7, 2)), 0);
+end;
+
+function MVCStringToTValue(const AValue: string; const ATypeInfo: PTypeInfo;
+  const AParamNameForError: string): TValue;
+var
+  lFloat: Double;
+  lSingle: Single;
+  lExtended: Extended;
+  lTypeLabel: string;
+
+  function ParamName: string;
+  begin
+    if AParamNameForError <> '' then
+      Result := AParamNameForError
+    else
+      Result := '<value>';
+  end;
+
+  function BadValue(const ATypeName: string; E: Exception): EMVCException;
+  begin
+    Result := EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+      'Invalid %s value for param [%s] - [CLASS: %s][MSG: %s]',
+      [ATypeName, ParamName, E.ClassName, E.Message]);
+  end;
+
+begin
+  if ATypeInfo = nil then
+    raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+      'Cannot convert "%s": missing type information for param [%s]',
+      [AValue, ParamName]);
+
+  case ATypeInfo.Kind of
+    tkUString:
+      Result := AValue;
+
+    tkInteger:
+      try
+        Result := StrToInt(AValue);
+      except
+        on E: Exception do
+          raise BadValue('Integer', E);
+      end;
+
+    tkInt64:
+      try
+        Result := StrToInt64(AValue);
+      except
+        on E: Exception do
+          raise BadValue('Int64', E);
+      end;
+
+    tkFloat:
+      begin
+        if ATypeInfo = TypeInfo(TDate) then
+          lTypeLabel := 'TDate'
+        else if ATypeInfo = TypeInfo(TTime) then
+          lTypeLabel := 'TTime'
+        else if ATypeInfo = TypeInfo(TDateTime) then
+          lTypeLabel := 'TDateTime'
+        else
+          lTypeLabel := 'Float';
+        try
+          // TDate / TTime / TDateTime are tkFloat with a distinct PTypeInfo:
+          // parse via the ISO helpers and build a TValue carrying the exact
+          // target type. Plain floats dispatch on the concrete FloatType so
+          // Single / Extended TValues are byte-correct (a Double-sized buffer
+          // forced to a Single/Extended type yields garbage).
+          if ATypeInfo = TypeInfo(TDate) then
+            Result := TValue.From<TDate>(ISODateToDate(AValue))
+          else if ATypeInfo = TypeInfo(TTime) then
+            Result := TValue.From<TTime>(ISOTimeToTime(AValue))
+          else if ATypeInfo = TypeInfo(TDateTime) then
+            Result := TValue.From<TDateTime>(ISOTimeStampToDateTime(AValue))
+          else
+          begin
+            lFloat := StrToFloat(AValue, TFormatSettings.Invariant);
+            // Fully qualified: Data.DB also exports ft* enum members.
+            case GetTypeData(ATypeInfo)^.FloatType of
+              System.TypInfo.ftSingle:
+                begin
+                  lSingle := lFloat;
+                  Result := TValue.From<Single>(lSingle);
+                end;
+              System.TypInfo.ftExtended:
+                begin
+                  lExtended := lFloat;
+                  Result := TValue.From<Extended>(lExtended);
+                end;
+            else
+              // ftDouble, ftComp, ftCurr — a Double TValue coerces cleanly.
+              Result := TValue.From<Double>(lFloat);
+            end;
+          end;
+        except
+          on E: EMVCException do
+            raise;
+          on E: Exception do
+            raise BadValue(lTypeLabel, E);
+        end;
+      end;
+
+    tkEnumeration:
+      if ATypeInfo = TypeInfo(Boolean) then
+      begin
+        if SameText(AValue, 'true') or SameText(AValue, 'yes') or (AValue = '1') then
+          Result := True
+        else if SameText(AValue, 'false') or SameText(AValue, 'no')
+          or (AValue = '0') or AValue.IsEmpty then
+          Result := False
+        else
+          raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+            'Invalid Boolean value for param [%s]. ' +
+            'Accepted: true/false, yes/no, 1/0.', [ParamName]);
+      end
+      else
+        raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+          'Unsupported enumeration type "%s" for param [%s]',
+          [string(ATypeInfo.Name), ParamName]);
+
+    tkRecord:
+      if ATypeInfo = TypeInfo(TGUID) then
+      begin
+        try
+          Result := TValue.From<TGUID>(TMVCGuidHelper.StringToGUIDEx(AValue));
+        except
+          on E: Exception do
+            raise BadValue('TGUID', E);
+        end;
+      end
+      else
+        raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+          'Unsupported record type "%s" for param [%s]',
+          [string(ATypeInfo.Name), ParamName]);
+  else
+    raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+      'Unsupported type "%s" for param [%s]',
+      [string(ATypeInfo.Name), ParamName]);
+  end;
 end;
 
 { TMVCSerializerHelper }
