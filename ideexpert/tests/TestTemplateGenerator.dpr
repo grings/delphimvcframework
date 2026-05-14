@@ -632,7 +632,7 @@ begin
     end;
 
     // JSON sidecar for SSV presets
-    if AConfig.B['program.ssv.any'] and not AConfig.B['program.minimal_api.web'] then
+    if AConfig.B['program.ssv.any'] and not AConfig.B[TConfigKey.program_minimal_api] then
     begin
       LogVerbose('Generating Controllers.APIU...');
       LSource := TTestTemplateEngine.Render('controller_api.pas.tpro', AConfig);

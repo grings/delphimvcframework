@@ -466,7 +466,7 @@ begin
   // JSON sidecar for SSV projects. Exposes /api/server/info alongside the
   // view-rendering THomeController so AJAX / HTMX partials have a content-
   // type-correct endpoint.
-  if AConfig.B['program.ssv.any'] and not AConfig.B['program.minimal_api.web'] then
+  if AConfig.B['program.ssv.any'] and not AConfig.B[TConfigKey.program_minimal_api] then
     SaveFile(CONTROLLER_API_UNIT + '.pas',
       RenderTemplate('controller_api.pas.tpro', AConfig));
 

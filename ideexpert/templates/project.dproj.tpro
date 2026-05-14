@@ -43,7 +43,7 @@
 {{if controller_main_generate}}
         <DCCReference Include="{{:controller_unit_name}}.pas"/>
 {{endif}}
-{{if program_ssv_any}}
+{{if @(program_ssv_any and (not program_minimal_api))}}
         <DCCReference Include="Controllers.APIU.pas"/>
 {{endif}}
 {{if controller_crud_methods_generate}}
