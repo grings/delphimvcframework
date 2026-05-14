@@ -186,6 +186,7 @@ type
     fModel: TJsonObject;
     fCurrentPage: Integer;
     fIsCustomPreset: Boolean;
+    fIsMinimalAPIPreset: Boolean;
     fPresetCaption: string;
     procedure UpdateSummary;
     procedure ShowNextStepsDialog(const AProjectName: string;
@@ -209,6 +210,7 @@ type
     property ProjectName: string read GetProjectName;
     property ProjectFolder: string read GetProjectFolder;
     procedure SetCustomMode(AIsCustom: Boolean);
+    procedure SetMinimalAPIMode(AEnabled: Boolean);
     procedure SetPresetCaption(const ACaption: string);
     procedure InitWizardPages;
     function GetConfigModel: TJSONObject;
@@ -421,6 +423,39 @@ begin
   fIsCustomPreset := AIsCustom;
 end;
 
+procedure TfrmDMVCNewProject.SetMinimalAPIMode(AEnabled: Boolean);
+begin
+  fIsMinimalAPIPreset := AEnabled;
+  if AEnabled then
+  begin
+    // Lock the routing model: Minimal API is the typology. chkCreateCRUDMethods
+    // is the generator trigger for RoutesU.pas, so it is locked ON (visible),
+    // not hidden.
+    chkMinimalAPI.Checked := True;
+    chkMinimalAPI.Enabled := False;
+    chkCreateCRUDMethods.Checked := True;
+    chkCreateCRUDMethods.Enabled := False;
+    // Hide controls with no meaning when no controller class is generated.
+    edtControllerClassName.Visible := False;
+    chkCreateIndexMethod.Visible := False;
+    chkCreateActionFiltersMethods.Visible := False;
+    chkProfileActions.Visible := False;
+    chkJSONRPC.Visible := False;
+    EdtJSONRPCClassName.Visible := False;
+  end
+  else
+  begin
+    chkMinimalAPI.Enabled := True;
+    chkCreateCRUDMethods.Enabled := True;
+    edtControllerClassName.Visible := True;
+    chkCreateIndexMethod.Visible := True;
+    chkCreateActionFiltersMethods.Visible := True;
+    chkProfileActions.Visible := True;
+    chkJSONRPC.Visible := True;
+    EdtJSONRPCClassName.Visible := True;
+  end;
+end;
+
 procedure TfrmDMVCNewProject.InitWizardPages;
 begin
   NavigateToPage(0);
@@ -442,6 +477,7 @@ begin
   lblCopyRight.Caption := TMVCConstants.COPYRIGHT;
   fModel := TJsonObject.Create;
   fIsCustomPreset := False;
+  fIsMinimalAPIPreset := False;
 
   lDefaultProjectsFolder := TPath.Combine(
     TPath.GetDocumentsPath,
