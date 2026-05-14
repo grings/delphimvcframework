@@ -50,6 +50,7 @@ type
     program_service_container_generate = 'program.service.container.generate';
     program_service_container_unit_name = 'program.service.container.unit_name';
     program_minimal_api = 'program.minimal_api';
+    program_htmx = 'program.htmx';
     mustache_helpers_unit_name = 'mustache.helpers_unit_name';
     templatepro_helpers_unit_name = 'templatepro.helpers_unit_name';
     webstencils_helpers_unit_name = 'webstencils.helpers_unit_name';
@@ -455,6 +456,13 @@ begin
                                      AConfig.B[TConfigKey.program_ssv_templatepro] or
                                      AConfig.B[TConfigKey.program_ssv_webstencils];
 
+    // Minimal API + server-side views (TemplatePro) => the "Web App" flavor.
+    // Mirror of DMVC.Expert.ProjectGenerator: drives RoutesU template selection
+    // and suppresses the controller-oriented SSV scaffolding.
+    AConfig.B['program.minimal_api.web'] :=
+      AConfig.B[TConfigKey.program_minimal_api] and
+      AConfig.B[TConfigKey.program_ssv_templatepro];
+
     // Logging profile: default to fluent when tests don't override, and
     // pre-compute the derived booleans the templates consume (the real
     // DMVC.Expert.ProjectGenerator does the same).
@@ -624,7 +632,7 @@ begin
     end;
 
     // JSON sidecar for SSV presets
-    if AConfig.B['program.ssv.any'] then
+    if AConfig.B['program.ssv.any'] and not AConfig.B['program.minimal_api.web'] then
     begin
       LogVerbose('Generating Controllers.APIU...');
       LSource := TTestTemplateEngine.Render('controller_api.pas.tpro', AConfig);
@@ -639,7 +647,13 @@ begin
     // Generate CRUD sample: controller class (default) or lambda-route unit (Minimal API).
     if AConfig.B[TConfigKey.controller_crud_methods_generate] then
     begin
-      if AConfig.B[TConfigKey.program_minimal_api] then
+      if AConfig.B['program.minimal_api.web'] then
+      begin
+        LogVerbose('Generating RoutesU (Minimal API WebApp)...');
+        LSource := TTestTemplateEngine.Render('routes_minimal_web.pas.tpro', AConfig);
+        TFile.WriteAllText(TPath.Combine(AOutputDir, 'RoutesU.pas'), LSource);
+      end
+      else if AConfig.B[TConfigKey.program_minimal_api] then
       begin
         LogVerbose('Generating RoutesU (Minimal API)...');
         LSource := TTestTemplateEngine.Render('routes_minimal.pas.tpro', AConfig);
@@ -1476,6 +1490,20 @@ begin
   LTestCase.Config.B[TConfigKey.entity_generate] := True;
   LTestCase.Config.B[TConfigKey.program_service_container_generate] := True;
   LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
+  ATestCases.Add(LTestCase);
+
+  // Test 53: Indy Direct + Minimal API WebApp (TemplatePro + HTMX)
+  LTestCase.Name := 'indydirect_minimal_api_web';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'indydirect';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.INDY_DIRECT;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.program_ssv_templatepro] := True;
+  LTestCase.Config.B[TConfigKey.program_htmx] := True;
   LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
   LTestCase.Config.B['controller.main.generate'] := False;
   ATestCases.Add(LTestCase);
