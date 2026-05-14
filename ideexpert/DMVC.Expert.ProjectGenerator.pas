@@ -357,6 +357,13 @@ begin
                                    AConfig.B[TConfigKey.program_ssv_templatepro] or
                                    AConfig.B[TConfigKey.program_ssv_webstencils];
 
+  // Minimal API + server-side views (TemplatePro) => the "Web App" flavor.
+  // Drives RoutesU template selection and the minimal-web view block, and
+  // suppresses the controller-oriented SSV scaffolding.
+  AConfig.B['program.minimal_api.web'] :=
+    AConfig.B[TConfigKey.program_minimal_api] and
+    AConfig.B[TConfigKey.program_ssv_templatepro];
+
   // Pre-computed logging profile booleans: TemplatePro's @(a and b) compound
   // expressions only accept boolean variables, not |eq,"..." filter
   // expressions, so we materialize the profile checks into plain booleans.
@@ -459,14 +466,17 @@ begin
   // JSON sidecar for SSV projects. Exposes /api/server/info alongside the
   // view-rendering THomeController so AJAX / HTMX partials have a content-
   // type-correct endpoint.
-  if AConfig.B['program.ssv.any'] then
+  if AConfig.B['program.ssv.any'] and not AConfig.B['program.minimal_api.web'] then
     SaveFile(CONTROLLER_API_UNIT + '.pas',
       RenderTemplate('controller_api.pas.tpro', AConfig));
 
   // CRUD sample: controller class (default) or lambda-route unit (Minimal API).
   if AConfig.B[TConfigKey.controller_crud_methods_generate] then
   begin
-    if AConfig.B[TConfigKey.program_minimal_api] then
+    if AConfig.B['program.minimal_api.web'] then
+      SaveFile('RoutesU.pas',
+        RenderTemplate('routes_minimal_web.pas.tpro', AConfig))
+    else if AConfig.B[TConfigKey.program_minimal_api] then
       SaveFile('RoutesU.pas',
         RenderTemplate('routes_minimal.pas.tpro', AConfig))
     else
