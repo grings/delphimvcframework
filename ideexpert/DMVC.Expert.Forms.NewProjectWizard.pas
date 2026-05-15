@@ -226,8 +226,7 @@ uses
   Vcl.FileCtrl,
   DMVC.Expert.Commons,
   System.TypInfo,
-  IdTCPServer,
-  IdGlobal;
+  Winapi.Winsock2;
 
 {$R *.dfm}
 
@@ -1005,7 +1004,11 @@ end;
 procedure TfrmDMVCNewProject.btnTestPortClick(Sender: TObject);
 var
   LPort: Integer;
-  LTCPServer: TIdTCPServer;
+  LWsa: TWSAData;
+  LSock: TSocket;
+  LAddr: TSockAddrIn;
+  LReuse: Integer;
+  LErr: Integer;
 begin
   if not TryStrToInt(Trim(edtServerPort.Text), LPort) or (LPort < 1) or (LPort > 65534) then
   begin
@@ -1013,19 +1016,43 @@ begin
     Exit;
   end;
 
-  LTCPServer := TIdTCPServer.Create(nil);
+  // Probe via raw Winsock: SO_REUSEADDR + bind on 0.0.0.0:port, then close.
+  // Avoids Indy quirks (TIdTCPServer.Active=True requires an OnExecute
+  // handler, TIdSimpleServer needs IOHandler wiring) — both produced
+  // misleading "NOT available" messages even on free ports.
+  if WSAStartup($0202, LWsa) <> 0 then
+  begin
+    ShowMessage(Format('Cannot test port: WSAStartup failed (%d).', [WSAGetLastError]));
+    Exit;
+  end;
   try
-    LTCPServer.DefaultPort := LPort;
+    LSock := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if LSock = INVALID_SOCKET then
+    begin
+      ShowMessage(Format('Cannot test port: socket() failed (WSA %d).', [WSAGetLastError]));
+      Exit;
+    end;
     try
-      LTCPServer.Active := True;
-      LTCPServer.Active := False;
-      ShowMessage(Format('Port %d is available.', [LPort]));
-    except
-      on E: Exception do
-        ShowMessage(Format('Port %d is NOT available: %s', [LPort, E.Message]));
+      LReuse := 1;
+      setsockopt(LSock, SOL_SOCKET, SO_REUSEADDR, @LReuse, SizeOf(LReuse));
+
+      FillChar(LAddr, SizeOf(LAddr), 0);
+      LAddr.sin_family := AF_INET;
+      LAddr.sin_port := htons(LPort);
+      LAddr.sin_addr.S_addr := INADDR_ANY;
+
+      if Winapi.Winsock2.bind(LSock, TSockAddr(LAddr), SizeOf(LAddr)) = SOCKET_ERROR then
+      begin
+        LErr := WSAGetLastError;
+        ShowMessage(Format('Port %d is NOT available (WSA error %d).', [LPort, LErr]));
+      end
+      else
+        ShowMessage(Format('Port %d is available.', [LPort]));
+    finally
+      closesocket(LSock);
     end;
   finally
-    LTCPServer.Free;
+    WSACleanup;
   end;
 end;
 
