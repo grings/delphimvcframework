@@ -574,6 +574,7 @@ function MemorySession(const ATimeoutInMinutes: Integer = 0;
 implementation
 
 uses
+  System.Diagnostics,
   System.StrUtils,
   MVCFramework.Router,
   MVCFramework.Rtti.Utils,
@@ -1661,6 +1662,7 @@ var
   lResp: IMVCResponse;
   lParamsTable: TMVCRequestParamsTable;
   lOwnedParamsTable: Boolean;
+  lStopWatch: TStopwatch;
 begin
   if AHandled then
     Exit;
@@ -1690,6 +1692,13 @@ begin
 
     // Wire ParamsTable into the context so the resolver can read segments.
     AContext.ParamsTable := lParamsTable;
+
+    // Match TMVCEngine.HandleRequest semantics: measure the wall-clock time
+    // spent dispatching the matched route, then fire the engine's OnRouterLog
+    // hook so the default Gin-style console line is emitted for minimal-API
+    // routes too. Without this, only controller-based routes get logged and
+    // the wizard-generated minimal-API project appears silent on the console.
+    lStopWatch := TStopwatch.StartNew;
 
     lRenderer := TMVCMinimalRenderer.Create;
     try
@@ -1737,6 +1746,12 @@ begin
     finally
       lRenderer.Route := nil;  // make the dangling-ref window minimal
       lRenderer.Free;
+    end;
+
+    if Assigned(fEngine.OnRouterLog) then
+    begin
+      AContext.Data['__duration'] := Format('%dms', [lStopWatch.ElapsedMilliseconds]);
+      fEngine.OnRouterLog(rlsRouteFound, AContext);
     end;
   finally
     if lOwnedParamsTable then
