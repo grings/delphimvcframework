@@ -53,6 +53,11 @@ type
     [MVCFromContentField('password')] Password: string;
   end;
 
+// Console request logging is automatic: TMVCEngine fires OnRouterLog after
+// every dispatched route (controller-based or minimal-API), and the default
+// handler emits a Gin-style line through DMVCColorConsole. No filter needed
+// here.
+
 // Endpoint filter: short-circuit with a redirect to ARedirectTo unless the
 // session carries a 'user' value. Returned as a TMVCEndpointFilter so it can be
 // attached with .Use(...) to a group built via .AsWeb.
