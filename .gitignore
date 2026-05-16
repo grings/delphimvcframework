@@ -160,6 +160,29 @@ samples/wine_cellar_sample/winecellarclient_mobile/Android64/Debug/
 /unittests/general/TestClient/bin32/firebird/system32/**
 /unittests/general/TestClient/bin64/firebird/system32/
 /unittests/general/TestClient/bin64/firebird/system32/**
+
+# Track embedded PostgreSQL + Firebird runtime needed by integration tests
+# (override the global *.exe / *.dll ignore for these specific dirs)
+!/unittests/general/TestClient/pgsql/bin/**
+!/unittests/general/TestClient/pgsql/lib/**
+!/unittests/general/TestClient/bin32/firebird/**
+!/unittests/general/TestClient/bin64/firebird/**
+
+# OpenSSL DLLs needed by Indy-based crypto tests
+!/unittests/general/TestClient/bin32/libeay32.dll
+!/unittests/general/TestClient/bin32/ssleay32.dll
+!/unittests/general/TestClient/bin64/libeay32.dll
+!/unittests/general/TestClient/bin64/ssleay32.dll
+
+# Re-assert ignores that must win even inside the FB/PG dirs above
+/unittests/general/TestClient/bin32/firebird/doc/**
+/unittests/general/TestClient/bin64/firebird/doc/**
+/unittests/general/TestClient/bin32/firebird/system32/**
+/unittests/general/TestClient/bin64/firebird/system32/**
+/unittests/general/TestClient/pgsql/testdatadir/**
+
+# Local Win64 TestServer build output (not part of the repo)
+/unittests/general/TestServer/bin64/
 **/dmvc_sessions/*
 .claude
 /samples/websocket_chat/_README.md
