@@ -32,7 +32,9 @@ uses
 type
   TDMVCProjectPreset = (
     ppRESTfulAPI,
+    ppMinimalAPIRest,
     ppWebApplication,
+    ppMinimalAPIWebApp,
     ppJSONRPC,
     ppRealTime,
     ppFullStack,
@@ -54,11 +56,23 @@ const
       IDSuffix: '1.RestfulAPI';
       IconResource: 'DMVCPresetRestfulAPI'
     ),
+    ( // ppMinimalAPIRest
+      Caption: 'Minimal API RESTful';
+      Hint: 'Lambda routes instead of a controller class. JSON responses, versioned /api/v1 prefix, per-group endpoint filters (.Use). For compact REST services and APIs.';
+      IDSuffix: '1b.MinimalAPIRest';
+      IconResource: 'DMVCPresetMinimalAPIRest'
+    ),
     ( // ppWebApplication
       Caption: 'Web Application';
       Hint: 'TemplatePro views, static files, sessions, compression, HTMX support. For server-rendered web apps with forms and navigation.';
       IDSuffix: '2.WebApp';
       IconResource: 'DMVCPresetWebApp'
+    ),
+    ( // ppMinimalAPIWebApp
+      Caption: 'Minimal API WebApp';
+      Hint: 'Lambda routes via .AsWeb. RenderView/ViewData, TemplatePro layout, cookie-session and login endpoint filters, HTMX. For server-rendered web apps without controllers.';
+      IDSuffix: '2b.MinimalAPIWebApp';
+      IconResource: 'DMVCPresetMinimalAPIWebApp'
     ),
     ( // ppJSONRPC
       Caption: 'JSON-RPC Service';
@@ -135,6 +149,51 @@ begin
   AForm.cbNameCase.ItemIndex := 3; // CamelCase (0=AsIs, 1=UpperCase, 2=LowerCase, 3=CamelCase, 4=PascalCase, 5=SnakeCase)
 end;
 
+procedure ApplyPreset_MinimalAPIRest(AForm: TfrmDMVCNewProject);
+begin
+  // Controller: Minimal API uses lambda routes, no controller class.
+  // chkCreateCRUDMethods stays checked — in minimal-API mode it means
+  // "generate the sample lambda routes" (RoutesU.pas).
+  AForm.edtControllerClassName.Text := 'THomeController';
+  AForm.chkMinimalAPI.Visible := True;
+  AForm.chkMinimalAPI.Checked := True;
+  AForm.chkCreateIndexMethod.Checked := False;
+  AForm.chkCreateCRUDMethods.Checked := True;
+  AForm.chkCreateActionFiltersMethods.Checked := False;
+  AForm.chkProfileActions.Checked := False;
+
+  // Features
+  AForm.chkServicesContainer.Checked := True;
+  AForm.chkJSONRPC.Checked := False;
+  AForm.chkWebSocketServer.Checked := False;
+  AForm.cbSSV.ItemIndex := 0; // None
+  AForm.chkSqids.Checked := False;
+  AForm.chkHtmx.Checked := False;
+  AForm.chkHtmx.Visible := False;
+  AForm.chkCustomConfigDotEnv.Checked := False;
+  AForm.rgJWTAlgorithm.ItemIndex := 0; // None — auth is the BearerAuthFilter in RoutesU
+
+  // Middleware
+  AForm.chkCORS.Checked := True;
+  AForm.chkCompression.Checked := True;
+  AForm.chkETAG.Checked := False;
+  AForm.chkStaticFiles.Checked := False;
+  AForm.chkAnalyticsMiddleware.Checked := False;
+  AForm.chkTrace.Checked := False;
+  AForm.chkRateLimit.Checked := False;
+  AForm.chkActiveRecord.Checked := False;
+  AForm.cbSessionType.ItemIndex := 0; // None
+
+  // Server
+  AForm.rgServerProtocol.ItemIndex := 0; // HTTP
+  AForm.rgApplicationType.ItemIndex := 0; // Console
+  AForm.cbServerEngine.ItemIndex := 1; // Indy Direct
+  AForm.edtServerPort.Text := '8080';
+
+  // Serializer
+  AForm.cbNameCase.ItemIndex := 3; // CamelCase
+end;
+
 procedure ApplyPreset_WebApplication(AForm: TfrmDMVCNewProject);
 begin
   // Controller
@@ -176,6 +235,50 @@ begin
 
   // Serializer
   AForm.cbNameCase.ItemIndex := 3; // CamelCase (0=AsIs, 1=UpperCase, 2=LowerCase, 3=CamelCase, 4=PascalCase, 5=SnakeCase)
+end;
+
+procedure ApplyPreset_MinimalAPIWebApp(AForm: TfrmDMVCNewProject);
+begin
+  // Controller: Minimal API uses lambda routes, no controller class.
+  // TemplatePro SSV + minimal API => the "Web App" flavor (routes_minimal_web).
+  AForm.edtControllerClassName.Text := 'THomeController';
+  AForm.chkMinimalAPI.Visible := True;
+  AForm.chkMinimalAPI.Checked := True;
+  AForm.chkCreateIndexMethod.Checked := False;
+  AForm.chkCreateCRUDMethods.Checked := True;
+  AForm.chkCreateActionFiltersMethods.Checked := False;
+  AForm.chkProfileActions.Checked := False;
+
+  // Features
+  AForm.chkServicesContainer.Checked := True;
+  AForm.chkJSONRPC.Checked := False;
+  AForm.chkWebSocketServer.Checked := False;
+  AForm.cbSSV.ItemIndex := 1; // TemplatePro
+  AForm.chkSqids.Checked := False;
+  AForm.chkHtmx.Checked := True;
+  AForm.chkHtmx.Visible := True;
+  AForm.chkCustomConfigDotEnv.Checked := False;
+  AForm.rgJWTAlgorithm.ItemIndex := 0; // None — auth is the RequireLogin filter in RoutesU
+
+  // Middleware
+  AForm.chkCORS.Checked := False;
+  AForm.chkCompression.Checked := True;
+  AForm.chkETAG.Checked := False;
+  AForm.chkStaticFiles.Checked := False; // views use CDN assets
+  AForm.chkAnalyticsMiddleware.Checked := False;
+  AForm.chkTrace.Checked := False;
+  AForm.chkRateLimit.Checked := False;
+  AForm.chkActiveRecord.Checked := False;
+  AForm.cbSessionType.ItemIndex := 0; // None — session is the MemorySession filter in RoutesU
+
+  // Server
+  AForm.rgServerProtocol.ItemIndex := 0; // HTTP
+  AForm.rgApplicationType.ItemIndex := 0; // Console
+  AForm.cbServerEngine.ItemIndex := 1; // Indy Direct
+  AForm.edtServerPort.Text := '8080';
+
+  // Serializer
+  AForm.cbNameCase.ItemIndex := 3; // CamelCase
 end;
 
 procedure ApplyPreset_JSONRPC(AForm: TfrmDMVCNewProject);
@@ -311,11 +414,13 @@ end;
 procedure ApplyPresetToForm(APreset: TDMVCProjectPreset; AForm: TfrmDMVCNewProject);
 begin
   case APreset of
-    ppRESTfulAPI:      ApplyPreset_RESTfulAPI(AForm);
-    ppWebApplication:  ApplyPreset_WebApplication(AForm);
-    ppJSONRPC:         ApplyPreset_JSONRPC(AForm);
-    ppRealTime:        ApplyPreset_RealTime(AForm);
-    ppFullStack:       ApplyPreset_FullStack(AForm);
+    ppRESTfulAPI:        ApplyPreset_RESTfulAPI(AForm);
+    ppMinimalAPIRest:    ApplyPreset_MinimalAPIRest(AForm);
+    ppWebApplication:    ApplyPreset_WebApplication(AForm);
+    ppMinimalAPIWebApp:  ApplyPreset_MinimalAPIWebApp(AForm);
+    ppJSONRPC:           ApplyPreset_JSONRPC(AForm);
+    ppRealTime:          ApplyPreset_RealTime(AForm);
+    ppFullStack:         ApplyPreset_FullStack(AForm);
     ppCustom:
     begin
       // Reset visibility that may have been changed by other presets

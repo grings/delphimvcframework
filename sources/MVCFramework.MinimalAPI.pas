@@ -574,6 +574,7 @@ function MemorySession(const ATimeoutInMinutes: Integer = 0;
 implementation
 
 uses
+  System.Diagnostics,
   System.StrUtils,
   MVCFramework.Router,
   MVCFramework.Rtti.Utils,
@@ -1134,71 +1135,12 @@ end;
 
 class function TMVCMinimalArgResolver.ConvertStringTo(const AValue: string;
   ATypeInfo: PTypeInfo): TValue;
-var
-  lInt64: Int64;
-  lInt: Integer;
-  lDouble: Double;
-  lBool: Boolean;
-  lDateTime: TDateTime;
-  lGuid: TGUID;
 begin
-  if ATypeInfo = TypeInfo(string) then
-    Exit(TValue.From<string>(AValue));
-
-  if ATypeInfo = TypeInfo(Integer) then
-  begin
-    if not TryStrToInt(AValue, lInt) then
-      raise EMVCMinimalAPI.CreateFmt(http_status.BadRequest,
-        'Cannot convert "%s" to Integer', [AValue]);
-    Exit(TValue.From<Integer>(lInt));
-  end;
-
-  if ATypeInfo = TypeInfo(Int64) then
-  begin
-    if not TryStrToInt64(AValue, lInt64) then
-      raise EMVCMinimalAPI.CreateFmt(http_status.BadRequest,
-        'Cannot convert "%s" to Int64', [AValue]);
-    Exit(TValue.From<Int64>(lInt64));
-  end;
-
-  if ATypeInfo = TypeInfo(Boolean) then
-  begin
-    if SameText(AValue, 'true') or (AValue = '1') then
-      lBool := True
-    else if SameText(AValue, 'false') or (AValue = '0') or AValue.IsEmpty then
-      lBool := False
-    else
-      raise EMVCMinimalAPI.CreateFmt(http_status.BadRequest,
-        'Cannot convert "%s" to Boolean', [AValue]);
-    Exit(TValue.From<Boolean>(lBool));
-  end;
-
-  if (ATypeInfo = TypeInfo(Double)) or (ATypeInfo = TypeInfo(Single))
-    or (ATypeInfo = TypeInfo(Extended)) then
-  begin
-    if not TryStrToFloat(AValue, lDouble, TFormatSettings.Invariant) then
-      raise EMVCMinimalAPI.CreateFmt(http_status.BadRequest,
-        'Cannot convert "%s" to Float', [AValue]);
-    Exit(TValue.From<Double>(lDouble));
-  end;
-
-  if (ATypeInfo = TypeInfo(TDateTime))
-    or (ATypeInfo = TypeInfo(TDate))
-    or (ATypeInfo = TypeInfo(TTime)) then
-  begin
-    lDateTime := ISOTimeStampToDateTime(AValue);
-    Exit(TValue.From<TDateTime>(lDateTime));
-  end;
-
-  if ATypeInfo = TypeInfo(TGUID) then
-  begin
-    lGuid := StringToGUID('{' + AValue.Replace('{', '').Replace('}', '') + '}');
-    Exit(TValue.From<TGUID>(lGuid));
-  end;
-
-  raise EMVCMinimalAPI.CreateFmt(http_status.InternalServerError,
-    'Unsupported primitive type "%s" for Minimal API parameter binding',
-    [ATypeInfo.Name]);
+  // Shared value coercion (see MVCFramework.Serializer.Commons). The classic
+  // controller binder (TMVCEngine.GetActualParam) routes through the same
+  // function, so minimal handlers and controller actions bind primitives
+  // identically.
+  Result := MVCStringToTValue(AValue, ATypeInfo);
 end;
 
 class function TMVCMinimalArgResolver.GetParamFromContext(const AContext: TWebContext;
@@ -1720,6 +1662,7 @@ var
   lResp: IMVCResponse;
   lParamsTable: TMVCRequestParamsTable;
   lOwnedParamsTable: Boolean;
+  lStopWatch: TStopwatch;
 begin
   if AHandled then
     Exit;
@@ -1749,6 +1692,13 @@ begin
 
     // Wire ParamsTable into the context so the resolver can read segments.
     AContext.ParamsTable := lParamsTable;
+
+    // Match TMVCEngine.HandleRequest semantics: measure the wall-clock time
+    // spent dispatching the matched route, then fire the engine's OnRouterLog
+    // hook so the default Gin-style console line is emitted for minimal-API
+    // routes too. Without this, only controller-based routes get logged and
+    // the wizard-generated minimal-API project appears silent on the console.
+    lStopWatch := TStopwatch.StartNew;
 
     lRenderer := TMVCMinimalRenderer.Create;
     try
@@ -1796,6 +1746,12 @@ begin
     finally
       lRenderer.Route := nil;  // make the dangling-ref window minimal
       lRenderer.Free;
+    end;
+
+    if Assigned(fEngine.OnRouterLog) then
+    begin
+      AContext.Data['__duration'] := Format('%dms', [lStopWatch.ElapsedMilliseconds]);
+      fEngine.OnRouterLog(rlsRouteFound, AContext);
     end;
   finally
     if lOwnedParamsTable then

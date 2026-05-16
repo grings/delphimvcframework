@@ -180,6 +180,14 @@
             <ResourceType>ICON</ResourceType>
             <ResourceId>DMVCPresetCustom</ResourceId>
         </RcItem>
+        <RcItem Include="..\..\ideexpert\icons\minimal_api_rest.ico">
+            <ResourceType>ICON</ResourceType>
+            <ResourceId>DMVCPresetMinimalAPIRest</ResourceId>
+        </RcItem>
+        <RcItem Include="..\..\ideexpert\icons\minimal_api_webapp.ico">
+            <ResourceType>ICON</ResourceType>
+            <ResourceId>DMVCPresetMinimalAPIWebApp</ResourceId>
+        </RcItem>
         <RcItem Include="..\..\ideexpert\DMVC.Expert.NewUnit.ico">
             <ResourceType>ICON</ResourceType>
             <ResourceId>DMVCNewUnitIcon</ResourceId>

@@ -186,6 +186,7 @@ type
     fModel: TJsonObject;
     fCurrentPage: Integer;
     fIsCustomPreset: Boolean;
+    fIsMinimalAPIPreset: Boolean;
     fPresetCaption: string;
     procedure UpdateSummary;
     procedure ShowNextStepsDialog(const AProjectName: string;
@@ -209,6 +210,7 @@ type
     property ProjectName: string read GetProjectName;
     property ProjectFolder: string read GetProjectFolder;
     procedure SetCustomMode(AIsCustom: Boolean);
+    procedure SetMinimalAPIMode(AEnabled: Boolean);
     procedure SetPresetCaption(const ACaption: string);
     procedure InitWizardPages;
     function GetConfigModel: TJSONObject;
@@ -224,8 +226,7 @@ uses
   Vcl.FileCtrl,
   DMVC.Expert.Commons,
   System.TypInfo,
-  IdTCPServer,
-  IdGlobal;
+  Winapi.Winsock2;
 
 {$R *.dfm}
 
@@ -421,6 +422,48 @@ begin
   fIsCustomPreset := AIsCustom;
 end;
 
+procedure TfrmDMVCNewProject.SetMinimalAPIMode(AEnabled: Boolean);
+begin
+  fIsMinimalAPIPreset := AEnabled;
+  if AEnabled then
+  begin
+    // Lock the routing model: Minimal API is the typology. chkCreateCRUDMethods
+    // is the generator trigger for RoutesU.pas, so it is locked ON (visible),
+    // not hidden.
+    chkMinimalAPI.Checked := True;
+    chkMinimalAPI.Enabled := False;
+    chkCreateCRUDMethods.Checked := True;
+    chkCreateCRUDMethods.Enabled := False;
+    // Hide controls with no meaning when no controller class is generated —
+    // each edit together with its caption label.
+    edtControllerClassName.Visible := False;
+    lblClassName.Visible := False;
+    edtWebModuleName.Visible := False;
+    lblWbModule.Visible := False;
+    chkCreateIndexMethod.Visible := False;
+    chkCreateActionFiltersMethods.Visible := False;
+    chkProfileActions.Visible := False;
+    chkJSONRPC.Visible := False;
+    EdtJSONRPCClassName.Visible := False;
+    lblJSONRPCClassName.Visible := False;
+  end
+  else
+  begin
+    chkMinimalAPI.Enabled := True;
+    chkCreateCRUDMethods.Enabled := True;
+    edtControllerClassName.Visible := True;
+    lblClassName.Visible := True;
+    edtWebModuleName.Visible := True;
+    lblWbModule.Visible := True;
+    chkCreateIndexMethod.Visible := True;
+    chkCreateActionFiltersMethods.Visible := True;
+    chkProfileActions.Visible := True;
+    chkJSONRPC.Visible := True;
+    EdtJSONRPCClassName.Visible := True;
+    lblJSONRPCClassName.Visible := True;
+  end;
+end;
+
 procedure TfrmDMVCNewProject.InitWizardPages;
 begin
   NavigateToPage(0);
@@ -442,6 +485,7 @@ begin
   lblCopyRight.Caption := TMVCConstants.COPYRIGHT;
   fModel := TJsonObject.Create;
   fIsCustomPreset := False;
+  fIsMinimalAPIPreset := False;
 
   lDefaultProjectsFolder := TPath.Combine(
     TPath.GetDocumentsPath,
@@ -960,7 +1004,11 @@ end;
 procedure TfrmDMVCNewProject.btnTestPortClick(Sender: TObject);
 var
   LPort: Integer;
-  LTCPServer: TIdTCPServer;
+  LWsa: TWSAData;
+  LSock: TSocket;
+  LAddr: TSockAddrIn;
+  LReuse: Integer;
+  LErr: Integer;
 begin
   if not TryStrToInt(Trim(edtServerPort.Text), LPort) or (LPort < 1) or (LPort > 65534) then
   begin
@@ -968,19 +1016,43 @@ begin
     Exit;
   end;
 
-  LTCPServer := TIdTCPServer.Create(nil);
+  // Probe via raw Winsock: SO_REUSEADDR + bind on 0.0.0.0:port, then close.
+  // Avoids Indy quirks (TIdTCPServer.Active=True requires an OnExecute
+  // handler, TIdSimpleServer needs IOHandler wiring) — both produced
+  // misleading "NOT available" messages even on free ports.
+  if WSAStartup($0202, LWsa) <> 0 then
+  begin
+    ShowMessage(Format('Cannot test port: WSAStartup failed (%d).', [WSAGetLastError]));
+    Exit;
+  end;
   try
-    LTCPServer.DefaultPort := LPort;
+    LSock := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if LSock = INVALID_SOCKET then
+    begin
+      ShowMessage(Format('Cannot test port: socket() failed (WSA %d).', [WSAGetLastError]));
+      Exit;
+    end;
     try
-      LTCPServer.Active := True;
-      LTCPServer.Active := False;
-      ShowMessage(Format('Port %d is available.', [LPort]));
-    except
-      on E: Exception do
-        ShowMessage(Format('Port %d is NOT available: %s', [LPort, E.Message]));
+      LReuse := 1;
+      setsockopt(LSock, SOL_SOCKET, SO_REUSEADDR, @LReuse, SizeOf(LReuse));
+
+      FillChar(LAddr, SizeOf(LAddr), 0);
+      LAddr.sin_family := AF_INET;
+      LAddr.sin_port := htons(LPort);
+      LAddr.sin_addr.S_addr := INADDR_ANY;
+
+      if Winapi.Winsock2.bind(LSock, TSockAddr(LAddr), SizeOf(LAddr)) = SOCKET_ERROR then
+      begin
+        LErr := WSAGetLastError;
+        ShowMessage(Format('Port %d is NOT available (WSA error %d).', [LPort, LErr]));
+      end
+      else
+        ShowMessage(Format('Port %d is available.', [LPort]));
+    finally
+      closesocket(LSock);
     end;
   finally
-    LTCPServer.Free;
+    WSACleanup;
   end;
 end;
 

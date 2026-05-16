@@ -51,6 +51,11 @@ uses
 // Endpoint filters
 // =============================================================================
 
+// Console request logging is automatic: TMVCEngine fires OnRouterLog after
+// every dispatched route (controller-based or minimal-API), and the default
+// handler emits a Gin-style line through DMVCColorConsole. No filter needed
+// here.
+
 // Short-circuits with 401 unless the request carries a Bearer token.
 // Replace the placeholder check with your real validator (JWT signer,
 // opaque-token store, ...).
