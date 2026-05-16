@@ -127,7 +127,7 @@ begin
   if TFile.Exists(LBuildConstsPath) then
   begin
     LFileContent := TFile.ReadAllText(LBuildConstsPath, TEncoding.UTF8);
-    // Extract version from: DMVCFRAMEWORK_VERSION = '3.5.0-silicon-rc2';
+    // Extract version from: DMVCFRAMEWORK_VERSION = '3.5.0-silicon-rc3';
     LStartPos := Pos('''', LFileContent);
     if LStartPos > 0 then
     begin

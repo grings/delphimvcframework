@@ -121,7 +121,6 @@ samples/serversideviews_lua/bin/templates/__compiled/
 samples/serversideviews_lua/lua4delphi/unittests/Win32/
 /unittests/general/TestClient/bin/EchoSingleComplexRecord_RESPONSE.json
 /unittests/general/TestClient/bin/TestRequest_Echo_ComplexRecords_RESPONSE.json
-unittests/general/TestClient/pgsql/testdatadir/
 unittests/general/TestClient/bin32/EchoSingleComplexRecord_RESPONSE.json
 TestRequest_Echo_ComplexRecords_RESPONSE.json
 EchoSingleComplexRecord_RESPONSE.json
@@ -152,6 +151,15 @@ samples/wine_cellar_sample/winecellarclient_mobile/Android/Debug/
 samples/wine_cellar_sample/winecellarclient_mobile/Android64/Debug/
 *.delphilsp.json
 /unittests/general/TestClient/pgsql/testdatadir/
+/unittests/general/TestClient/pgsql/testdatadir/**
+/unittests/general/TestClient/bin32/firebird/doc/
+/unittests/general/TestClient/bin32/firebird/doc/**
+/unittests/general/TestClient/bin64/firebird/doc/
+/unittests/general/TestClient/bin64/firebird/doc/**
+/unittests/general/TestClient/bin32/firebird/system32/
+/unittests/general/TestClient/bin32/firebird/system32/**
+/unittests/general/TestClient/bin64/firebird/system32/
+/unittests/general/TestClient/bin64/firebird/system32/**
 **/dmvc_sessions/*
 .claude
 /samples/websocket_chat/_README.md
@@ -165,9 +173,7 @@ nul
 /tools/certificatesgenerator/*.key
 /tools/certificatesgenerator/*.crt
 /samples/tls13/bin/certificates/*
-/unittests/general/TestClient/pgsql/testdatadir/*
 /CLAUDE.md
-/unittests/general/TestClient/pgsql/testdatadir/*
 /build_tests.bat
 /output/*
 /ideexpert/tests/output/*
@@ -199,7 +205,6 @@ GUIDA_OIDC_DANIELE.md
 # Release report per Patreon — mai committare
 /docs/release_report_3.5.0-silicon.md
 /docs/release_report_3.5.0-silicon_en.md
-/unittests/general/TestClient/pgsql/testdatadir/*
 /docs/itdevcon*.md
 /docs/superpowers/*
 # Minimal API guide — commercial document, never commit
