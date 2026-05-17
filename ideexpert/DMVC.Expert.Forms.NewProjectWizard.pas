@@ -211,6 +211,7 @@ type
     property ProjectFolder: string read GetProjectFolder;
     procedure SetCustomMode(AIsCustom: Boolean);
     procedure SetMinimalAPIMode(AEnabled: Boolean);
+    procedure SetApiStyleVisible(AVisible: Boolean);
     procedure SetPresetCaption(const ACaption: string);
     procedure InitWizardPages;
     function GetConfigModel: TJSONObject;
@@ -420,6 +421,15 @@ end;
 procedure TfrmDMVCNewProject.SetCustomMode(AIsCustom: Boolean);
 begin
   fIsCustomPreset := AIsCustom;
+end;
+
+procedure TfrmDMVCNewProject.SetApiStyleVisible(AVisible: Boolean);
+begin
+  // Toggle the entire "API Style" group box (caption + descriptive label +
+  // chkMinimalAPI checkbox). Hiding only chkMinimalAPI leaves an empty
+  // labelled group on the page — call this from preset Apply procs instead.
+  gbApiStyle.Visible := AVisible;
+  chkMinimalAPI.Visible := AVisible;
 end;
 
 procedure TfrmDMVCNewProject.SetMinimalAPIMode(AEnabled: Boolean);

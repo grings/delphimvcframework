@@ -47,7 +47,11 @@
         <DCCReference Include="Controllers.APIU.pas"/>
 {{endif}}
 {{if controller_crud_methods_generate}}
+{{if program_minimal_api}}
+        <DCCReference Include="RoutesU.pas"/>
+{{else}}
         <DCCReference Include="Controllers.PeopleU.pas"/>
+{{endif}}
 {{endif}}
 {{if entity_generate}}
         <DCCReference Include="{{:entity_unit_name}}.pas"/>

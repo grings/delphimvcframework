@@ -110,8 +110,10 @@ begin
   // - Controllers.HomeU with an "index" endpoint that sanity-checks the server
   // - Controllers.PeopleU with the CRUD sample
   AForm.edtControllerClassName.Text := 'THomeController';
-  AForm.chkMinimalAPI.Visible := True;      // user can opt in to lambda routes
-  AForm.chkMinimalAPI.Checked := False;     // default: controller class (unchanged behavior)
+  // Lambda routes are now a typology (Minimal API REST / WebApp presets).
+  // The API Style group is shown only in Custom; here it stays hidden.
+  AForm.SetApiStyleVisible(False);
+  AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := True;
   AForm.chkCreateActionFiltersMethods.Checked := False;
@@ -155,7 +157,7 @@ begin
   // chkCreateCRUDMethods stays checked — in minimal-API mode it means
   // "generate the sample lambda routes" (RoutesU.pas).
   AForm.edtControllerClassName.Text := 'THomeController';
-  AForm.chkMinimalAPI.Visible := True;
+  AForm.SetApiStyleVisible(True);
   AForm.chkMinimalAPI.Checked := True;
   AForm.chkCreateIndexMethod.Checked := False;
   AForm.chkCreateCRUDMethods.Checked := True;
@@ -198,7 +200,7 @@ procedure ApplyPreset_WebApplication(AForm: TfrmDMVCNewProject);
 begin
   // Controller
   AForm.edtControllerClassName.Text := 'TWebController';
-  AForm.chkMinimalAPI.Visible := False;     // SSV needs controller-based RenderView
+  AForm.SetApiStyleVisible(False);          // SSV needs controller-based RenderView
   AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := False;
@@ -242,7 +244,7 @@ begin
   // Controller: Minimal API uses lambda routes, no controller class.
   // TemplatePro SSV + minimal API => the "Web App" flavor (routes_minimal_web).
   AForm.edtControllerClassName.Text := 'THomeController';
-  AForm.chkMinimalAPI.Visible := True;
+  AForm.SetApiStyleVisible(True);
   AForm.chkMinimalAPI.Checked := True;
   AForm.chkCreateIndexMethod.Checked := False;
   AForm.chkCreateCRUDMethods.Checked := True;
@@ -263,8 +265,8 @@ begin
   // Middleware
   AForm.chkCORS.Checked := False;
   AForm.chkCompression.Checked := True;
-  AForm.chkETAG.Checked := False;
-  AForm.chkStaticFiles.Checked := False; // views use CDN assets
+  AForm.chkETAG.Checked := True;            // HTTPFilter version available 2026-05-17
+  AForm.chkStaticFiles.Checked := True;     // HTTPFilter version available 2026-05-17
   AForm.chkAnalyticsMiddleware.Checked := False;
   AForm.chkTrace.Checked := False;
   AForm.chkRateLimit.Checked := False;
@@ -285,7 +287,7 @@ procedure ApplyPreset_JSONRPC(AForm: TfrmDMVCNewProject);
 begin
   // Controller - minimal, just for health check
   AForm.edtControllerClassName.Text := 'THealthController';
-  AForm.chkMinimalAPI.Visible := False;     // JSON-RPC publisher is controller-based
+  AForm.SetApiStyleVisible(False);          // JSON-RPC publisher is controller-based
   AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := False;
@@ -329,7 +331,7 @@ procedure ApplyPreset_RealTime(AForm: TfrmDMVCNewProject);
 begin
   // Controller
   AForm.edtControllerClassName.Text := 'TRealTimeController';
-  AForm.chkMinimalAPI.Visible := False;     // RealTime preset wires controller-based companion routes
+  AForm.SetApiStyleVisible(False);          // RealTime preset wires controller-based companion routes
   AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := False;
@@ -372,7 +374,7 @@ procedure ApplyPreset_FullStack(AForm: TfrmDMVCNewProject);
 begin
   // Controller
   AForm.edtControllerClassName.Text := 'TAppController';
-  AForm.chkMinimalAPI.Visible := False;     // SSV + JSON-RPC require controllers
+  AForm.SetApiStyleVisible(False);          // SSV + JSON-RPC require controllers
   AForm.chkMinimalAPI.Checked := False;
   AForm.chkCreateIndexMethod.Checked := True;
   AForm.chkCreateCRUDMethods.Checked := True;
@@ -425,7 +427,8 @@ begin
     begin
       // Reset visibility that may have been changed by other presets
       AForm.chkHtmx.Visible := True;
-      AForm.chkMinimalAPI.Visible := True;
+      AForm.SetApiStyleVisible(True);  // Custom is the only preset where the
+                                       // user picks API style (controller vs minimal)
       AForm.chkMinimalAPI.Checked := False;
       AForm.cbServerEngine.ItemIndex := 1; // Default Indy Direct for Custom
     end;

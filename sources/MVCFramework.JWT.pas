@@ -291,6 +291,14 @@ type
     function AsCustomData: TMVCCustomData;
   end;
 
+  // Forward declaration so TJWTClaimsSetup below can reference TJWT.
+  TJWT = class;
+
+  // Configures the registered claims of a freshly-minted token (issuer,
+  // audience, expiration time, ...) before it is signed. Used by both the
+  // classic JWT middleware and the minimal-API JWT() filter helper.
+  TJWTClaimsSetup = reference to procedure(const JWT: TJWT);
+
   TJWT = class
   private
     FSecretKey: string;

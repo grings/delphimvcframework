@@ -379,10 +379,13 @@ begin
   // least one method. With the CRUD sample now living in Controllers.PeopleU,
   // a RESTful preset (no index methods, no SSV) would otherwise leave an
   // empty TXxxController = class(TMVCController) end; in ControllerU.
+  // Minimal-API WebApp replaces the controller class with lambda routes in
+  // RoutesU.pas, so suppress THomeController even when SSV is on.
   AConfig.B['controller.main.generate'] :=
-    AConfig.B[TConfigKey.controller_index_methods_generate] or
-    AConfig.B[TConfigKey.controller_action_filters_generate] or
-    AConfig.B['program.ssv.any'];
+    (not AConfig.B['program.minimal_api.web']) and
+    (AConfig.B[TConfigKey.controller_index_methods_generate] or
+     AConfig.B[TConfigKey.controller_action_filters_generate] or
+     AConfig.B['program.ssv.any']);
 
   // Always use .html extension for better editor support
   AConfig.S['template.extension'] := 'html';
@@ -655,6 +658,10 @@ begin
   // navbar baselayout plus home / login / admin / time(fragment), matching the
   // routes in routes_minimal_web.pas.tpro. Files are runtime TemplatePro
   // templates: loaded raw, only wizard-time placeholders replaced.
+  //
+  // The Showcase WebApp variant uses the same baselayout but ships a different
+  // view set (one view per showcase endpoint), so this block forks on the
+  // showcase flag before emitting the per-page templates.
   if AConfig.B['program.minimal_api.web'] then
   begin
     LTemplatesPath := TPath.Combine(LBinPath, 'templates');

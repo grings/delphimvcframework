@@ -82,7 +82,9 @@ type
     AUTHORIZATION_ACCESS_TOKEN = 'access_token';
   end;
 
-  TJWTClaimsSetup = reference to procedure(const JWT: TJWT);
+  // Re-export so callers that uses MVCFramework.Middleware.JWT still see
+  // the type without needing to add MVCFramework.JWT explicitly.
+  TJWTClaimsSetup = MVCFramework.JWT.TJWTClaimsSetup;
 
   TMVCJWTAuthenticationMiddleware = class(TInterfacedObject, IMVCMiddleware)
   private

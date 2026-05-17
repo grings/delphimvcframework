@@ -1,328 +1,102 @@
-/* DMVCFramework — Forged with Delphi */
+/* DMVCFramework — Bootstrap 5 theme overrides
+ *
+ * Bootstrap 5.3 ships built-in dark mode via `<html data-bs-theme="dark">`.
+ * This file only adds: brand fonts, a gold accent that overrides --bs-primary,
+ * a couple of one-off helpers (hero block, monospace badge), and an HTMX
+ * activity indicator. Everything else (cards, navbar, buttons, grid, alerts,
+ * forms, badges, spinners, ...) is stock Bootstrap.
+ */
+
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
-/* === Design Tokens === */
+/* === Brand tokens (shared across themes) === */
 :root {
-  --font-body: 'Outfit', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
-  --radius: 10px;
-  --radius-sm: 6px;
-  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --brand-accent: #fbbf24;        /* amber-400 */
+  --brand-accent-strong: #d4991a;
+  --brand-font-body: 'Outfit', system-ui, -apple-system, sans-serif;
+  --brand-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* === Dark Theme (default) === */
-[data-theme="dark"] {
-  --bg: #0b0f19;
-  --bg-subtle: #0f1525;
-  --surface: #141c2e;
-  --surface-hover: #1a253a;
-  --border: rgba(255, 255, 255, 0.06);
-  --border-hover: rgba(251, 191, 36, 0.35);
-  --text: #e8ecf4;
-  --text-muted: #7c879c;
-  --accent: #fbbf24;
-  --accent-dim: #d4991a;
-  --accent-glow: rgba(251, 191, 36, 0.08);
-  --accent-glow-strong: rgba(251, 191, 36, 0.15);
-  --code-bg: rgba(251, 191, 36, 0.07);
-  --code-text: #fcd34d;
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-  --hero-gradient: linear-gradient(180deg, var(--accent-glow) 0%, transparent 100%);
-  --grain: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+/* === Override Bootstrap primary with the brand accent === */
+[data-bs-theme="dark"],
+[data-bs-theme="light"] {
+  --bs-primary: var(--brand-accent);
+  --bs-primary-rgb: 251, 191, 36;
+  --bs-link-color: var(--brand-accent);
+  --bs-link-hover-color: var(--brand-accent-strong);
+  --bs-link-color-rgb: 251, 191, 36;
 }
 
-/* === Light Theme === */
-[data-theme="light"] {
-  --bg: #f7f5f0;
-  --bg-subtle: #efece6;
-  --surface: #ffffff;
-  --surface-hover: #faf9f7;
-  --border: rgba(0, 0, 0, 0.08);
-  --border-hover: rgba(180, 120, 0, 0.3);
-  --text: #1a1a2e;
-  --text-muted: #6b7280;
-  --accent: #b45309;
-  --accent-dim: #92400e;
-  --accent-glow: rgba(180, 83, 9, 0.06);
-  --accent-glow-strong: rgba(180, 83, 9, 0.12);
-  --code-bg: rgba(180, 83, 9, 0.06);
-  --code-text: #92400e;
-  --shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
-  --hero-gradient: linear-gradient(180deg, var(--accent-glow) 0%, transparent 100%);
-  --grain: none;
+/* Bootstrap 5.3 generates btn-* color helpers from CSS vars at compile time,
+ * so the override above does NOT regenerate .btn-primary on the fly. Force
+ * the visible button surface to the accent here.
+ */
+.btn-primary {
+  --bs-btn-bg: var(--brand-accent);
+  --bs-btn-border-color: var(--brand-accent);
+  --bs-btn-hover-bg: var(--brand-accent-strong);
+  --bs-btn-hover-border-color: var(--brand-accent-strong);
+  --bs-btn-active-bg: var(--brand-accent-strong);
+  --bs-btn-active-border-color: var(--brand-accent-strong);
+  --bs-btn-disabled-bg: var(--brand-accent);
+  --bs-btn-disabled-border-color: var(--brand-accent);
+  --bs-btn-color: #1a1a1a;
+  --bs-btn-hover-color: #1a1a1a;
+  --bs-btn-active-color: #1a1a1a;
+  --bs-btn-disabled-color: #1a1a1a;
+}
+.btn-outline-primary {
+  --bs-btn-color: var(--brand-accent);
+  --bs-btn-border-color: var(--brand-accent);
+  --bs-btn-hover-bg: var(--brand-accent);
+  --bs-btn-hover-border-color: var(--brand-accent);
+  --bs-btn-hover-color: #1a1a1a;
+  --bs-btn-active-bg: var(--brand-accent-strong);
+  --bs-btn-active-border-color: var(--brand-accent-strong);
+  --bs-btn-active-color: #1a1a1a;
 }
 
-/* === Base === */
-html { font-family: var(--font-body); scroll-behavior: smooth; }
-body {
-  background: var(--bg);
-  color: var(--text);
-  transition: background var(--transition), color var(--transition);
-}
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background: var(--grain);
-  pointer-events: none;
-  z-index: 9999;
-}
+/* === Body typography === */
+body { font-family: var(--brand-font-body); }
+code, pre, kbd, samp { font-family: var(--brand-font-mono); }
 
-/* === Entrance Animation === */
-@keyframes reveal {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-main { animation: reveal 0.5s ease-out; }
-main .grid > article:nth-child(1) { animation: reveal 0.5s ease-out 0.05s both; }
-main .grid > article:nth-child(2) { animation: reveal 0.5s ease-out 0.12s both; }
-main .grid > article:nth-child(3) { animation: reveal 0.5s ease-out 0.19s both; }
-
-/* === Navigation === */
-nav {
-  background: transparent;
-  border-bottom: 1px solid var(--border);
-  padding: 0;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-nav::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--bg);
-  opacity: 0.85;
-  z-index: -1;
-}
-nav > .container {
-  padding-top: 0.65rem;
-  padding-bottom: 0.65rem;
-}
-nav ul {
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  margin-bottom: 0;
-}
-nav li strong {
-  font-weight: 700;
-  font-size: 0.92rem;
-  letter-spacing: 0.02em;
-  color: var(--accent);
-  line-height: 1.5;
-}
-nav li a {
-  font-size: 0.8rem;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-decoration: none;
-  padding: 0.3rem 0.7rem;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition);
-  position: relative;
-}
-nav li a:hover {
-  color: var(--accent);
-  background: var(--accent-glow);
-}
-nav li a[aria-current="page"] {
-  color: var(--text);
-  font-weight: 600;
-  background: transparent;
-  border-radius: 0;
-  border-bottom: 2px solid var(--accent);
-}
-
-/* === Theme Toggle === */
-.theme-toggle {
-  background: none;
-  border: 1px solid var(--border);
-  cursor: pointer;
-  font-size: 1rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition);
-  line-height: 1;
-  color: var(--text-muted);
-}
-.theme-toggle:hover {
-  background: var(--accent-glow);
-  border-color: var(--border-hover);
-  color: var(--accent);
-}
-
-/* === Main Content === */
-main { padding-top: 1.5rem; }
-
-/* === Hero === */
+/* === Hero block (used on home / about / index landing) === */
 .hero {
   text-align: center;
-  padding: 3.5rem 1.5rem 2.5rem;
-  margin-bottom: 2rem;
-  background: var(--hero-gradient);
-  border-radius: var(--radius);
+  padding: 3rem 1.5rem 2.25rem;
+  margin-bottom: 1.5rem;
+  border-radius: 0.75rem;
+  background: linear-gradient(180deg, rgba(251, 191, 36, 0.08) 0%, transparent 100%);
 }
 .hero h1 {
-  font-size: clamp(1.8rem, 5vw, 2.8rem);
   font-weight: 800;
   letter-spacing: -0.02em;
-  color: var(--text);
+  font-size: clamp(1.8rem, 5vw, 2.6rem);
   margin-bottom: 0.6rem;
-  word-break: break-word;
 }
-.hero h1 span.accent { color: var(--accent); }
-.hero > p {
-  color: var(--text-muted);
-  margin-bottom: 0.5rem;
-  font-weight: 300;
-  font-size: 1.05rem;
-}
+.hero p.lead { color: var(--bs-secondary-color); }
 
-/* === Badge === */
-.badge {
-  display: inline-block;
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
+/* === Monospace badge (.badge.font-monospace works but the font import
+ *     needs to be explicit; this keeps the visual identity consistent.) === */
+.badge.brand-mono {
+  font-family: var(--brand-font-mono);
   font-weight: 500;
-  padding: 0.2rem 0.6rem;
-  border-radius: 100px;
-  background: var(--accent-glow);
-  color: var(--accent);
-  border: 1px solid var(--border);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.02em;
 }
 
-/* === Section Labels === */
+/* === Section label (small caps marker above a content section) === */
 .section-label {
-  font-family: var(--font-mono);
+  font-family: var(--brand-font-mono);
   font-size: 0.7rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.12em;
-  color: var(--accent);
+  color: var(--brand-accent);
   margin-bottom: 0.75rem;
-  padding-left: 0.15rem;
 }
 
-/* === Cards (Pico articles) === */
-article {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  overflow: hidden;
-  transition: border-color var(--transition), box-shadow var(--transition), transform var(--transition);
-}
-article:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 4px 24px var(--accent-glow-strong);
-  transform: translateY(-1px);
-}
-article header {
-  border-bottom: 1px solid var(--border);
-  font-weight: 600;
-  font-size: 0.95rem;
-  color: var(--text);
-}
-article footer {
-  color: var(--text-muted);
-  margin-top: auto;
-  padding-top: 0.75rem;
-  border-top: 1px solid var(--border);
-}
-
-/* === Headings === */
-h2 {
-  color: var(--text);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 0.5rem;
-}
-
-/* === Code === */
-code {
-  font-family: var(--font-mono);
-  background: var(--code-bg);
-  color: var(--code-text);
-  border-radius: var(--radius-sm);
-  padding: 0.12em 0.4em;
-  font-size: 0.85em;
-  font-weight: 500;
-}
-
-/* === Buttons === */
-button.outline, [role="button"].outline {
-  border-color: var(--border);
-  color: var(--text-muted);
-  font-weight: 500;
-  font-size: 0.85rem;
-  border-radius: var(--radius-sm);
-  transition: all var(--transition);
-}
-button.outline:hover, [role="button"].outline:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-glow);
-}
-
-/* === Page Footer === */
-footer[class="container"] {
-  border-top: 1px solid var(--border);
-  margin-top: 3rem;
-  padding-top: 1.5rem;
-  padding-bottom: 1.5rem;
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.82rem;
-}
-footer[class="container"] a {
-  color: var(--accent);
-  text-decoration: none;
-}
-footer[class="container"] a:hover { text-decoration: underline; }
-
-/* === HTMX transitions === */
-.htmx-request { opacity: 0.5; transition: opacity 0.3s; }
-
-/* === Toast Notifications === */
-.toast-container {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
-  z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.toast {
-  font-family: var(--font-body);
-  padding: 0.7rem 1.2rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: #fff;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-  animation: toastSlide 0.3s ease-out, toastFade 0.3s ease-in 2.7s forwards;
-}
-.toast-success { background: #065f46; border-color: rgba(16, 185, 129, 0.3); }
-.toast-error { background: #7f1d1d; border-color: rgba(239, 68, 68, 0.3); }
-.toast-info { background: #1e3a5f; border-color: rgba(59, 130, 246, 0.3); }
-@keyframes toastSlide {
-  from { opacity: 0; transform: translateX(1rem); }
-  to { opacity: 1; transform: translateX(0); }
-}
-@keyframes toastFade {
-  to { opacity: 0; transform: translateY(-0.5rem); }
-}
-
-/* === Responsive === */
-@media (max-width: 768px) {
-  .hero { padding: 2.5rem 1rem 2rem; }
-  nav li a { font-size: 0.75rem; padding: 0.25rem 0.5rem; }
-}
+/* === HTMX activity indicator: dim the element while a request is in flight === */
+.htmx-request { opacity: 0.55; transition: opacity 0.25s ease-in-out; }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { display: inline-block; }

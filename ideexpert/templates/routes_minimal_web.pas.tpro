@@ -81,6 +81,12 @@ begin
   // Public web surface. .AsWeb marks every route rkWeb. MemorySession is a
   // group-level filter inherited by every nested group (e.g. /admin below) —
   // no classic IMVCMiddleware involved.
+  //
+  // Any handler that needs the request context / session / HTMX detection
+  // declares TWebContext as a generic argument; the resolver injects the
+  // live context. Same discipline as ASP.NET Core Minimal APIs: typed args
+  // only, no static ambient helpers (except ViewData, which is data flowing
+  // OUT to the view engine — different semantics).
   lWeb := ARoot.AsWeb.Use(MemorySession(30));
 
   lWeb.MapGet<TWebContext>('/',

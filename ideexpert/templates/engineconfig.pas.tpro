@@ -82,6 +82,9 @@ uses
 {{if @(webmodule_middleware_compression and (not program_minimal_api))}}
   MVCFramework.Middleware.Compression,
 {{endif}}
+{{if program_minimal_api}}
+  MVCFramework.MinimalAPI,
+{{endif}}
   System.SysUtils;
 
 procedure ConfigureEngine(AEngine: TMVCEngine);
@@ -100,25 +103,35 @@ var
   LWwwPath: string;
 {{endif}}
 {{endif}}
+{{if @(program_minimal_api and (program_ssv_any or webmodule_middleware_staticfiles))}}
+var
+  LWwwPath: string;
+{{endif}}
 begin
 {{if @((not program_minimal_api) and (program_ssv_any or webmodule_middleware_staticfiles))}}
 
   // Static files path (www folder at same level as executable)
   LWwwPath := TPath.Combine(AppPath, 'www');
 {{endif}}
+{{if @(program_minimal_api and (program_ssv_any or webmodule_middleware_staticfiles))}}
 
+  // Static files path (www folder at same level as executable)
+  LWwwPath := TPath.Combine(AppPath, 'www');
+{{endif}}
+
+{{if @(not program_minimal_api)}}
   // Controllers
 {{if controller_main_generate}}
   AEngine.AddController({{:controller_classname}});
 {{endif}}
-{{if @(program_ssv_any and (not program_minimal_api))}}
+{{if program_ssv_any}}
   AEngine.AddController(TAPIController);
 {{endif}}
-{{if @(controller_crud_methods_generate and (not program_minimal_api))}}
+{{if controller_crud_methods_generate}}
   AEngine.AddController(TPeopleController);
 {{endif}}
   // Controllers - END
-{{if program_minimal_api}}
+{{else}}
   // Minimal API mode: routes are wired by ConfigureRoutes(LEngine.Root)
   // called explicitly from the .dpr right after ConfigureEngine. Cross-
   // cutting concerns (auth, logging, rate-limit) live in RoutesU as
@@ -143,7 +156,6 @@ begin
   AEngine.SetViewEngine(TMVCMustacheViewEngine);
   // Server Side View - END
 {{endif}}
-
 {{if @(not program_minimal_api)}}
 {{if webmodule_middleware_ratelimit}}
 
@@ -276,6 +288,28 @@ begin
 {{endif}}
   // Middleware - END
 {{endif}}
+{{if program_minimal_api}}
+
+  // HTTPFilter chain (engine-wide, minimal-API native).
+  // Order matters: first registered = outermost = pre-Next runs first,
+  // post-Next runs last. RequestLog outermost for full-request timing;
+  // ETag outermost for hashing the bytes actually sent on the wire.
+{{if @(program_ssv_any or webmodule_middleware_staticfiles)}}
+  AEngine.UseHTTPFilter(StaticFiles('/static', LWwwPath));
+{{endif}}
+{{if webmodule_middleware_cors}}
+  AEngine.UseHTTPFilter(CORSFilter('*'));
+{{endif}}
+{{if webmodule_middleware_etag}}
+  AEngine.UseHTTPFilter(ETag());
+{{endif}}
+{{if webmodule_middleware_compression}}
+  AEngine.UseHTTPFilter(Compression(1024));
+{{endif}}
+{{if webmodule_middleware_ratelimit}}
+  AEngine.UseHTTPFilter(RateLimit(60, 60));
+{{endif}}
+{{endif}}
 {{if program_ssv_templatepro}}
 
   // Exception handler for server-side views (browser requests only)
@@ -327,7 +361,6 @@ begin
       Result := {{:jsonrpc_classname}}.Create;
     end, '/jsonrpc');
 {{endif}}
-
 end;
 
 end.

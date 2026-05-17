@@ -113,12 +113,19 @@ type
   TTestCase = record
     Name: string;
     Config: TJSONObject;
+    // Optional file-presence assertions evaluated after GenerateProject.
+    // Paths are relative to the per-case output folder, use '/' separators.
+    // ExpectedFiles must all exist; ForbiddenFiles must all be absent.
+    // Leave empty to skip the file-check phase for the case.
+    ExpectedFiles: TArray<string>;
+    ForbiddenFiles: TArray<string>;
   end;
 
   TTestResult = record
     TestName: string;
     GenerationOK: Boolean;
     CompilationOK: Boolean;
+    FileCheckOK: Boolean; // True when no expected/forbidden lists are configured
     ErrorMessage: string;
   end;
 
@@ -491,10 +498,14 @@ begin
     if not AConfig.Contains('logging.exewatch')          then AConfig.B['logging.exewatch']          := False;
 
     // Main controller emission gate (mirror of DMVC.Expert.ProjectGenerator).
+    // Suppress for Minimal API WebApp: lambda routes replace the controller
+    // class even when SSV is on (the controller would otherwise be emitted
+    // and shadow the routes file).
     AConfig.B['controller.main.generate'] :=
-      AConfig.B[TConfigKey.controller_index_methods_generate] or
-      AConfig.B[TConfigKey.controller_action_filters_generate] or
-      AConfig.B['program.ssv.any'];
+      (not AConfig.B['program.minimal_api.web']) and
+      (AConfig.B[TConfigKey.controller_index_methods_generate] or
+       AConfig.B[TConfigKey.controller_action_filters_generate] or
+       AConfig.B['program.ssv.any']);
 
     // Always use .html extension for better editor support
     AConfig.S['template.extension'] := 'html';
@@ -947,33 +958,90 @@ begin
   end;
 end;
 
-procedure RunTest(const ATestName: string; const AConfig: TJSONObject);
+function VerifyExpectedFiles(const AOutputDir: string;
+  const AExpected, AForbidden: TArray<string>; out AError: string): Boolean;
+var
+  LRel: string;
+  LAbs: string;
+  LMissing, LLeaked: TArray<string>;
+begin
+  Result := True;
+  AError := '';
+  LMissing := nil;
+  LLeaked := nil;
+
+  for LRel in AExpected do
+  begin
+    LAbs := TPath.Combine(AOutputDir, LRel.Replace('/', PathDelim));
+    if not (TFile.Exists(LAbs) or TDirectory.Exists(LAbs)) then
+      LMissing := LMissing + [LRel];
+  end;
+
+  for LRel in AForbidden do
+  begin
+    LAbs := TPath.Combine(AOutputDir, LRel.Replace('/', PathDelim));
+    if TFile.Exists(LAbs) or TDirectory.Exists(LAbs) then
+      LLeaked := LLeaked + [LRel];
+  end;
+
+  if Length(LMissing) > 0 then
+  begin
+    Result := False;
+    AError := 'Missing expected: ' + String.Join(', ', LMissing);
+  end;
+  if Length(LLeaked) > 0 then
+  begin
+    Result := False;
+    if AError <> '' then
+      AError := AError + ' | ';
+    AError := AError + 'Unexpected present: ' + String.Join(', ', LLeaked);
+  end;
+end;
+
+procedure RunTest(const ATestCase: TTestCase);
 var
   LResult: TTestResult;
   LOutputDir: string;
   LCompileError: string;
+  LFileError: string;
 begin
   Log('');
-  Log('=== Test: ' + ATestName + ' ===');
+  Log('=== Test: ' + ATestCase.Name + ' ===');
 
-  LResult.TestName := ATestName;
+  LResult.TestName := ATestCase.Name;
   LResult.GenerationOK := False;
   LResult.CompilationOK := False;
+  LResult.FileCheckOK := True; // True by default; flipped on a real check failure
   LResult.ErrorMessage := '';
 
-  LOutputDir := TPath.Combine(GOutputDir, ATestName);
+  LOutputDir := TPath.Combine(GOutputDir, ATestCase.Name);
 
   try
-    LResult.GenerationOK := GenerateProject(AConfig, LOutputDir);
+    LResult.GenerationOK := GenerateProject(ATestCase.Config, LOutputDir);
     if LResult.GenerationOK then
     begin
       Log('Generation: OK');
 
-      // Try to compile if not skipped
-      if not GSkipCompile then
+      // File-presence assertions (only when the case configured at least one).
+      if (Length(ATestCase.ExpectedFiles) > 0) or
+         (Length(ATestCase.ForbiddenFiles) > 0) then
+      begin
+        LResult.FileCheckOK := VerifyExpectedFiles(LOutputDir,
+          ATestCase.ExpectedFiles, ATestCase.ForbiddenFiles, LFileError);
+        if LResult.FileCheckOK then
+          Log('File check: OK')
+        else
+        begin
+          Log('File check: FAILED — ' + LFileError);
+          LResult.ErrorMessage := LFileError;
+        end;
+      end;
+
+      // Try to compile if not skipped AND file check passed
+      if (not GSkipCompile) and LResult.FileCheckOK then
       begin
         LogVerbose('Compiling...');
-        LResult.CompilationOK := CompileProject(LOutputDir, AConfig.S[TConfigKey.program_name], LCompileError);
+        LResult.CompilationOK := CompileProject(LOutputDir, ATestCase.Config.S[TConfigKey.program_name], LCompileError);
         if LResult.CompilationOK then
           Log('Compilation: OK')
         else
@@ -983,7 +1051,7 @@ begin
           LogVerbose(LCompileError);
         end;
       end
-      else
+      else if GSkipCompile then
       begin
         Log('Compilation: SKIPPED');
         LResult.CompilationOK := True; // Mark as OK when skipped
@@ -1546,6 +1614,47 @@ begin
   LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
   LTestCase.Config.B['controller.main.generate'] := False;
   ATestCases.Add(LTestCase);
+
+  // Test 54: Indy Direct + Minimal API + full HTTPFilter stack.
+  // Verifies the engineconfig.pas.tpro minimal-API block emits
+  // UseHTTPFilter(...) calls for every supported helper and that the
+  // generated code compiles.
+  LTestCase.Name := 'indydirect_minimal_api_httpfilters';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'indydirect';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.INDY_DIRECT;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
+  // HTTPFilter helpers — each generates a UseHTTPFilter line in
+  // EngineConfigU.ConfigureEngine.
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_cors] := True;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_compression] := True;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_etag] := True;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_staticfiles] := True;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_ratelimit] := True;
+  ATestCases.Add(LTestCase);
+
+  // Test 55: Indy Direct + Minimal API WebApp + StaticFiles + ETag +
+  // Compression. Reflects the updated ppMinimalAPIWebApp preset which
+  // now opts into StaticFiles + ETag via the HTTPFilter wiring.
+  LTestCase.Name := 'indydirect_minimal_api_web_full_filters';
+  LTestCase.Config := CreateBaseConfig;
+  LTestCase.Config.S[TConfigKey.program_server_engine] := 'indydirect';
+  LTestCase.Config.S[TConfigKey.program_type] := TProgramTypes.INDY_DIRECT;
+  LTestCase.Config.B[TConfigKey.controller_crud_methods_generate] := True;
+  LTestCase.Config.B[TConfigKey.entity_generate] := True;
+  LTestCase.Config.B[TConfigKey.program_minimal_api] := True;
+  LTestCase.Config.B[TConfigKey.program_ssv_templatepro] := True;
+  LTestCase.Config.B[TConfigKey.program_htmx] := True;
+  LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
+  LTestCase.Config.B['controller.main.generate'] := False;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_compression] := True;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_etag] := True;
+  LTestCase.Config.B[TConfigKey.webmodule_middleware_staticfiles] := True;
+  ATestCases.Add(LTestCase);
 end;
 
 procedure PrintSummary;
@@ -1563,7 +1672,7 @@ begin
 
   for LResult in GTestResults do
   begin
-    if LResult.GenerationOK and LResult.CompilationOK then
+    if LResult.GenerationOK and LResult.CompilationOK and LResult.FileCheckOK then
     begin
       Inc(LPassed);
       Log('[PASS] ' + LResult.TestName);
@@ -1573,6 +1682,8 @@ begin
       Inc(LFailed);
       if not LResult.GenerationOK then
         Log('[FAIL] ' + LResult.TestName + ' - Generation failed: ' + LResult.ErrorMessage)
+      else if not LResult.FileCheckOK then
+        Log('[FAIL] ' + LResult.TestName + ' - File check failed: ' + LResult.ErrorMessage)
       else
         Log('[FAIL] ' + LResult.TestName + ' - Compilation failed: ' + LResult.ErrorMessage);
     end;
@@ -1723,7 +1834,7 @@ begin
 
       for LTestCase in LTestCases do
       begin
-        RunTest(LTestCase.Name, LTestCase.Config);
+        RunTest(LTestCase);
         LTestCase.Config.Free;
       end;
 

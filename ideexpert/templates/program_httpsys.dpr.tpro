@@ -158,7 +158,6 @@ begin
 {{endif}}
 
   try
-
 {{if program_ssv_webstencils}}
 
     WebStencilsProcessorConfigure;

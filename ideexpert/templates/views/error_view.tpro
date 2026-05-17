@@ -1,7 +1,7 @@
 {{# ================================================================
-   ERROR PAGE
+   ERROR PAGE - Bootstrap 5.3
    ================================================================
-   Extends baselayout.html.  Shown when an unhandled exception occurs.
+   Extends baselayout.html. Shown when an unhandled exception occurs.
 
    Variables available:
      error - The error message
@@ -13,9 +13,9 @@
 {{block "body"}}
   <div class="hero">
     <h1>Something went wrong</h1>
-    <p>{{:error}}</p>
+    <p class="lead">{{:error}}</p>
   </div>
-  <div style="text-align:center; margin-top: 1rem;">
-    <a href="/web" role="button" class="outline">Back to Home &rarr;</a>
+  <div class="text-center mt-3">
+    <a href="/web" class="btn btn-outline-primary">Back to Home &rarr;</a>
   </div>
 {{endblock}}
