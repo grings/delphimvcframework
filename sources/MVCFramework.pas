@@ -1110,6 +1110,10 @@ type
 
   TMVCExceptionHandlerProc = reference to procedure(E: Exception;
     SelectedController: TMVCController; WebContext: TWebContext; var ExceptionHandled: Boolean);
+
+  TMVCExceptionHandlerOption  = (ehShowDetails);
+  TMVCExceptionHandlerOptions = set of TMVCExceptionHandlerOption;
+
   TMVCRouterLogState = (rlsRouteFound, rlsRouteNotFound);
   TMVCRouterLogHandlerProc = reference to procedure(const RouterLogState: TMVCRouterLogState; const WebContext: TWebContext);
   TMVCJSONRPCExceptionHandlerProc = reference to procedure(E: Exception;
@@ -1157,6 +1161,7 @@ type
     function GetViewEngineClass: TMVCViewEngineClass;
     procedure HandleDefaultValueForInjectedParameter(var InjectedParamValue: String;
       const InjectableParamAttribute: MVCInjectableParamAttribute);
+    function ErrorViewExists(const AContext: TWebContext; const AViewName: string): Boolean;
   protected
     procedure DoWebContextCreateEvent(const AContext: TWebContext); inline;
     procedure DoWebContextDestroyEvent(const AContext: TWebContext); inline;
@@ -1232,6 +1237,10 @@ type
       const AURLSegment: string; ExceptionHandler: TMVCJSONRPCExceptionHandlerProc = nil): TMVCEngine;
     function SetViewEngine(const AViewEngineClass: TMVCViewEngineClass): TMVCEngine;
     function SetExceptionHandler(const AExceptionHandlerProc: TMVCExceptionHandlerProc): TMVCEngine;
+    function HandleException(const E: Exception; const AContext: TWebContext): Boolean;
+    function UseExceptionHandler(const AErrorViewName: string = 'error';
+      const AAppName: string = '';
+      const AOptions: TMVCExceptionHandlerOptions = []): TMVCEngine;
 
     procedure SendHTTPStatus(const AContext: TWebContext; const HTTPStatusCode: Integer;
       const AReasonString: string = ''; const AClassName: string = '');
@@ -3680,6 +3689,9 @@ begin
 end;
 
 procedure TMVCEngine.SaveCacheConfigValues;
+var
+  lMaxReq: string;
+  lCache: string;
 begin
   FConfigCache_MaxRequestSize := StrToInt64Def(Config[TMVCConfigKey.MaxRequestSize],
     TMVCConstants.DEFAULT_MAX_REQUEST_SIZE);
@@ -3690,6 +3702,24 @@ begin
   FConfigCache_DefaultContentCharset := Config[TMVCConfigKey.DefaultContentCharset];
   FConfigCache_PathPrefix := Config[TMVCConfigKey.PathPrefix];
   FConfigCache_UseViewCache := Config[TMVCConfigKey.ViewCache] = 'true';
+
+  // Surface the effective configuration at startup, one short line per key.
+  // The minimal-API scaffolds no longer pass a config callback, so these
+  // values are otherwise invisible in user code: logging them here keeps the
+  // active settings discoverable (defaults plus any callback override).
+  if FConfigCache_MaxRequestSize mod 1048576 = 0 then
+    lMaxReq := IntToStr(FConfigCache_MaxRequestSize div 1048576) + ' MiB'
+  else
+    lMaxReq := IntToStr(FConfigCache_MaxRequestSize) + ' bytes';
+  if FConfigCache_UseViewCache then
+    lCache := 'on'
+  else
+    lCache := 'off';
+  LogI('Effective configuration:');
+  LogI('  content-type : ' + FConfigCache_DefaultContentType);
+  LogI('  charset      : ' + FConfigCache_DefaultContentCharset);
+  LogI('  max-req-size : ' + lMaxReq);
+  LogI('  view-path    : ' + Config[TMVCConfigKey.ViewPath] + ' (cache ' + lCache + ')');
 end;
 
 //class function TMVCEngine.SendSessionCookie(const aContext: TWebContext; aHttpOnly: Boolean; const aSessionId: string): string;
@@ -3748,6 +3778,114 @@ function TMVCEngine.SetViewEngine(const AViewEngineClass: TMVCViewEngineClass): 
 begin
   FViewEngineClass := AViewEngineClass;
   Result := Self;
+end;
+
+// Public entry point so minimal-API dispatch (and filters) can delegate an
+// exception to the engine's configured exception handler (UseExceptionHandler /
+// SetExceptionHandler). Returns True if the handler produced the response.
+function TMVCEngine.HandleException(const E: Exception;
+  const AContext: TWebContext): Boolean;
+begin
+  Result := CustomExceptionHandling(E, nil, AContext);
+end;
+
+function TMVCEngine.ErrorViewExists(const AContext: TWebContext;
+  const AViewName: string): Boolean;
+var
+  lViewPath: string;
+  lFile: string;
+begin
+  lViewPath := AContext.Config[TMVCConfigKey.ViewPath];
+  if not TDirectory.Exists(lViewPath) then
+    lViewPath := TPath.Combine(
+      TPath.GetDirectoryName(GetModuleName(HInstance)), lViewPath);
+  lFile := TPath.Combine(lViewPath,
+    AViewName + '.' + AContext.Config[TMVCConfigKey.DefaultViewFileExtension]);
+  Result := TFile.Exists(lFile);
+end;
+
+
+function TMVCEngine.UseExceptionHandler(const AErrorViewName, AAppName: string;
+  const AOptions: TMVCExceptionHandlerOptions): TMVCEngine;
+var
+  lAppName: string;
+begin
+  if AAppName <> '' then
+    lAppName := AAppName
+  else
+    lAppName := TPath.GetFileNameWithoutExtension(GetModuleName(HInstance));
+  Result := SetExceptionHandler(
+    procedure(E: Exception; SelectedController: TMVCController;
+      WebContext: TWebContext; var Handled: Boolean)
+    var
+      lStatus: Integer;
+      lMsg: string;
+      lReason: string;
+      lView: TMVCBaseViewEngine;
+      lSB: TStringBuilder;
+    begin
+      Handled := False;
+      if E = nil then
+        lStatus := WebContext.Response.StatusCode
+      else if E is EMVCException then
+        lStatus := EMVCException(E).HTTPStatusCode
+      else
+        lStatus := HTTP_STATUS.InternalServerError;
+      if lStatus < 400 then
+        lStatus := HTTP_STATUS.InternalServerError;
+      try
+        lReason := HTTP_STATUS.ReasonStringFor(lStatus);
+      except
+        lReason := 'Error';
+      end;
+
+      if Assigned(E) and (ehShowDetails in AOptions) then
+        lMsg := E.Message
+      else
+        lMsg := '';
+
+      // Not a browser request, or no error view exists: leave Handled=False so
+      // the framework's own default error rendering runs unchanged.
+      if not (WebContext.Request.ClientPreferHTML
+              and ErrorViewExists(WebContext, AErrorViewName)) then
+        Exit;
+
+      WebContext.ViewData['status']       := lStatus;
+      WebContext.ViewData['statustext']   := lReason;
+      WebContext.ViewData['error']        := lMsg;
+      WebContext.ViewData['app_name']     := lAppName;
+      WebContext.ViewData['dmvc_version'] := DMVCFRAMEWORK_VERSION;
+      WebContext.ViewData['current_year'] := IntToStr(YearOf(Now));
+      WebContext.ViewData['ispage']       := True;
+
+      lView := nil;
+      lSB := nil;
+      try
+        lView := ViewEngineClass.Create(Self, WebContext, nil, WebContext.ViewData,
+          TMVCMediaType.TEXT_HTML);
+        lSB := TStringBuilder.Create;
+        try
+          lView.Execute(AErrorViewName, lSB);
+          WebContext.Response.StatusCode := lStatus;
+          WebContext.Response.ReasonString := lReason;
+          WebContext.Response.ContentType := TMVCMediaType.TEXT_HTML;
+          WebContext.Response.Content := lSB.ToString;
+          Handled := True;
+        except
+          on Ex: Exception do
+          begin
+            // HTML render threw; Response was NOT touched yet (Execute writes
+            // into lSB and Response is assigned only after).  Leave
+            // Handled=False so the framework default renders instead.
+            LogE(Format('UseExceptionHandler render failed: %s', [Ex.Message]));
+            Handled := False;
+          end;
+        end;
+      finally
+        lSB.Free;
+        lView.Free;
+      end;
+    end);
 end;
 
 { TMVCBase }

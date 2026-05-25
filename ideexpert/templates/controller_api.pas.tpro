@@ -30,7 +30,6 @@ uses
 
 function TAPIController.GetServerInfo: IMVCResponse;
 begin
-  // Returns JSON data - use this pattern for API endpoints
   Result := OkResponse(
     StrDict(
       ['application', 'dmvcVersion', 'serverTime', 'compilerVersion'],

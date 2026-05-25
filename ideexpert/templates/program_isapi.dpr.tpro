@@ -42,11 +42,7 @@ exports
 begin
   CoInitFlags := COINIT_MULTITHREADED;
 
-  // DMVCFramework Specific Configurations
   MVCSerializeNulls := True;
-
-  // BootConfigU.Boot: dotEnv + logger + profiler (+ TemplatePro context if any).
-  // Must run before the first LogI. Edit BootConfigU to tune anything.
   Boot;
 {{if program_sqids}}
 

@@ -1693,7 +1693,8 @@ var
   lFieldInfo: TFieldInfo;
   lDSField: TField;
 begin
-  { TODO -oDanieleT -cGeneral : Why not a TFDCommand? }
+  // TFDQuery is used instead of TFDCommand because we may need to Open it
+  // as a TDataSet to fetch generated keys or refreshed fields (RETURNING/OUTPUT).
   lQry := CreateQuery(True, True);
   try
     lQry.Connection := GetConnection;

@@ -222,6 +222,11 @@
         <DCCReference Include="..\..\sources\ExprEvaluator.pas"/>
         <DCCReference Include="..\..\sources\TemplatePro.Types.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Serializer.Streaming.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.MinimalAPI.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.Filters.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.Middleware.StaticFiles.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.OpenAPI3.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.Middleware.OpenAPI3.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

@@ -18,7 +18,8 @@ interface
 
 uses
   MVCFramework,
-  MVCFramework.MinimalAPI;
+  MVCFramework.MinimalAPI,
+  MVCFramework.Filters;
 
 procedure RegisterRoutes(AEngine: TMVCEngine);
 

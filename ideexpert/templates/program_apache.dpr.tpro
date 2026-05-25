@@ -1,9 +1,6 @@
 {{include "_license_header.tpro"}}
-//
-// Apache HTTP Server 2.4 module (Web.HTTPD24Impl).
-// Builds on both Windows (.dll) and Linux (.so).
-// Apache 2.2 and earlier are NOT supported (different module ABI).
-//
+// Apache 2.4 module (Web.HTTPD24Impl). Builds as .dll (Windows) or .so (Linux).
+// Apache 2.2 and earlier are NOT supported (incompatible ABI).
 library {{:program_name}};
 
 uses
@@ -35,22 +32,8 @@ uses
 
 {$R *.res}
 
-// Apache HTTP Server 2.4 only (Web.HTTPD24Impl). Apache 2.2 / 2.0 are NOT
-// supported (incompatible module ABI).
-//
-// Builds:
-//   - Windows: {{:program_name}}.dll  -> drop in apache/modules
-//   - Linux:   {{:program_name}}.so   -> drop in apache/modules
-//
-// httpd.conf entries (assuming module compiled into apache/modules folder):
-//
-//   LoadModule dmvc_module modules/{{:program_name}}.dll      (Windows)
-//   LoadModule dmvc_module modules/{{:program_name}}.so       (Linux)
-//   <Location /api>
-//     SetHandler mod_dmvc-handler
-//   </Location>
-//
-// Adjust if module name, location path, or output folder differ.
+// httpd.conf: LoadModule dmvc_module modules/{{:program_name}}.dll (or .so on Linux)
+// then: <Location /api> SetHandler mod_dmvc-handler </Location>
 
 var
   GModuleData: TApacheModuleData;
@@ -61,11 +44,7 @@ exports
 begin
   CoInitFlags := COINIT_MULTITHREADED;
 
-  // DMVCFramework Specific Configurations
   MVCSerializeNulls := True;
-
-  // BootConfigU.Boot: dotEnv + logger + profiler (+ TemplatePro context if any).
-  // Must run before the first LogI. Edit BootConfigU to tune anything.
   Boot;
 {{if program_sqids}}
 

@@ -17,6 +17,7 @@ uses
   MVCFramework,
   MVCFramework.Commons,
   MVCFramework.MinimalAPI,
+  MVCFramework.Filters,
   MVCFramework.Server.Intf,
   MVCFramework.Server.Factory,
   MVCFramework.RESTClient,
@@ -396,6 +397,191 @@ begin
   AssertStatus(AClient.Get('/ping'), 200, 'RequestLog passthrough -> 200');
 end;
 
+// -- scenario 7: Trace -- pre + post-Next debug logging --------------------
+
+procedure ConfigTrace(AEngine: TMVCEngine);
+begin
+  AEngine.UseHTTPFilter(Trace(2048, 'trace_test', False, True));
+  AEngine.Root.AsApi.MapGet('/echo',
+    function: IMVCResponse
+    begin
+      Result := Ok('echoed');
+    end);
+end;
+
+procedure TestTrace(AClient: IMVCRESTClient);
+var
+  lResp: IMVCRESTResponse;
+begin
+  // Smoke: response not corrupted by Trace's pre/post hooks.
+  lResp := AClient.Get('/echo');
+  AssertStatus(lResp, 200, 'Trace passthrough GET -> 200');
+
+  // POST with JSON body -- the body should be readable post-filter by the
+  // engine even though Trace called ReadTotalContent pre-Next.
+  lResp := AClient.AddHeader('Content-Type', TMVCMediaType.APPLICATION_JSON)
+                  .Post('/echo', '{"hello":"world"}');
+  // /echo is GET only -> 404/405 expected; we only check Trace didn't crash.
+  if (lResp.StatusCode >= 400) and (lResp.StatusCode < 500) then
+    Pass('Trace POST body read -> 4xx (route mismatch, no crash)')
+  else
+    Fail('Trace POST', Format('unexpected status %d', [lResp.StatusCode]));
+end;
+
+// -- scenario 8: Analytics -- post-Next CSV observer -----------------------
+
+procedure ConfigAnalytics(AEngine: TMVCEngine);
+begin
+  AEngine.UseHTTPFilter(Analytics()); // default CSV logger under bin\analytics
+  AEngine.Root.AsApi.MapGet('/ping',
+    function: IMVCResponse
+    begin
+      Result := Ok('pong');
+    end);
+end;
+
+procedure TestAnalytics(AClient: IMVCRESTClient);
+begin
+  // Smoke: filter must not corrupt the response. CSV emission is async via
+  // LoggerPro and depends on filesystem permissions, so we only assert the
+  // pass-through behavior here.
+  AssertStatus(AClient.Get('/ping'), 200, 'Analytics passthrough -> 200');
+end;
+
+// -- scenario 9: Redirect -- pattern match + 301 ---------------------------
+
+procedure ConfigRedirect(AEngine: TMVCEngine);
+begin
+  AEngine.UseHTTPFilter(Redirect(['/old', '/legacy'], '/new', True, True));
+  AEngine.Root.AsApi.MapGet('/new',
+    function: IMVCResponse
+    begin
+      Result := Ok('arrived');
+    end);
+end;
+
+procedure TestRedirect(AClient: IMVCRESTClient);
+var
+  lResp: IMVCRESTResponse;
+begin
+  // IMVCRESTClient follows 3xx by default; disable so we can observe the
+  // redirect response directly.
+  AClient := TMVCRESTClient.New.BaseURL(AClient.BaseURL).HandleRedirects(False);
+  lResp := AClient.Get('/old');
+  if (lResp.StatusCode = 301)
+     and (lResp.HeaderValue('Location') = '/new') then
+    Pass('Redirect /old -> 301 + Location /new')
+  else
+    Fail('Redirect /old', Format('status=%d location=%s',
+      [lResp.StatusCode, lResp.HeaderValue('Location')]));
+
+  AClient := TMVCRESTClient.New.BaseURL(AClient.BaseURL).HandleRedirects(False);
+  lResp := AClient.AddQueryStringParam('x', '1').AddQueryStringParam('y', '2').Get('/old');
+  if (lResp.StatusCode = 301)
+     and lResp.HeaderValue('Location').StartsWith('/new?') then
+    Pass('Redirect /old?x=1&y=2 -> 301 + Location preserves query: ' + lResp.HeaderValue('Location'))
+  else
+    Fail('Redirect with QS', Format('status=%d location=%s',
+      [lResp.StatusCode, lResp.HeaderValue('Location')]));
+
+  AClient := TMVCRESTClient.New.BaseURL(AClient.BaseURL).HandleRedirects(False);
+  lResp := AClient.Get('/new');
+  AssertStatus(lResp, 200, 'Redirect: non-matching /new passes through');
+end;
+
+// -- scenario 10: BasicAuth (callback overload) ----------------------------
+
+procedure ConfigBasicAuth(AEngine: TMVCEngine);
+begin
+  AEngine.Root.Use(BasicAuth(
+    function (const U, P: string; var R: TArray<string>): Boolean
+    begin
+      Result := (U = 'alice') and (P = 's3cret');
+      if Result then
+        R := TArray<string>.Create('user');
+    end, 'MyTestRealm'))
+    .MapGet('/secure',
+      function: IMVCResponse
+      begin
+        Result := Ok('welcome');
+      end);
+end;
+
+procedure TestBasicAuth(AClient: IMVCRESTClient);
+var
+  lResp: IMVCRESTResponse;
+  lAuthHeader: string;
+begin
+  AClient := TMVCRESTClient.New.BaseURL(AClient.BaseURL);
+  lResp := AClient.Get('/secure');
+  if (lResp.StatusCode = 401)
+     and lResp.HeaderValue('WWW-Authenticate').StartsWith('Basic realm=', True) then
+    Pass('BasicAuth no creds -> 401 + WWW-Authenticate')
+  else
+    Fail('BasicAuth no creds', Format('status=%d auth=%s',
+      [lResp.StatusCode, lResp.HeaderValue('WWW-Authenticate')]));
+
+  // alice:s3cret -> "YWxpY2U6czNjcmV0"
+  lAuthHeader := 'Basic YWxpY2U6czNjcmV0';
+  AClient := TMVCRESTClient.New.BaseURL(AClient.BaseURL);
+  lResp := AClient.AddHeader('Authorization', lAuthHeader).Get('/secure');
+  AssertStatus(lResp, 200, 'BasicAuth valid creds -> 200');
+
+  // alice:wrong -> "YWxpY2U6d3Jvbmc="
+  AClient := TMVCRESTClient.New.BaseURL(AClient.BaseURL);
+  lResp := AClient.AddHeader('Authorization', 'Basic YWxpY2U6d3Jvbmc=').Get('/secure');
+  AssertStatus(lResp, 401, 'BasicAuth wrong password -> 401');
+end;
+
+// -- scenario 11: FileSession persists across requests ---------------------
+
+var
+  GSessionTmpFolder: string;
+
+procedure ConfigFileSession(AEngine: TMVCEngine);
+begin
+  GSessionTmpFolder := TPath.Combine(TPath.GetTempPath,
+    'dmvc_filtertest_sess_' + TGUID.NewGuid.ToString.Replace('{', '').Replace('}', ''));
+  TDirectory.CreateDirectory(GSessionTmpFolder);
+
+  AEngine.Root.AsWeb.Use(FileSession(10, GSessionTmpFolder))
+    .MapGet<TWebContext>('/sess/set',
+      function (Ctx: TWebContext): IMVCResponse
+      begin
+        Ctx.Session['k'] := Ctx.Request.QueryStringParam('v');
+        Result := Ok('set:' + Ctx.Request.QueryStringParam('v'));
+      end);
+  AEngine.Root.AsWeb.Use(FileSession(10, GSessionTmpFolder))
+    .MapGet<TWebContext>('/sess/get',
+      function (Ctx: TWebContext): IMVCResponse
+      begin
+        Result := Ok(Ctx.Session['k']);
+      end);
+end;
+
+procedure TestFileSession(AClient: IMVCRESTClient);
+var
+  lResp: IMVCRESTResponse;
+begin
+  // Same client across calls so the session cookie sticks.
+  lResp := AClient.AddQueryStringParam('v', 'foo').Get('/sess/set');
+  AssertStatus(lResp, 200, 'FileSession set -> 200');
+
+  lResp := AClient.Get('/sess/get');
+  // Ok('foo') wraps the value in a {"message":"foo"} JSON envelope.
+  if (lResp.StatusCode = 200) and lResp.Content.Contains('"foo"') then
+    Pass('FileSession get -> 200 body contains "foo" (persisted across requests)')
+  else
+    Fail('FileSession get', Format('status=%d body=%s',
+      [lResp.StatusCode, lResp.Content]));
+
+  // Cleanup: best-effort, ignore failures.
+  try
+    TDirectory.Delete(GSessionTmpFolder, True);
+  except
+  end;
+end;
+
 begin
   IsMultiThread := True;
   try
@@ -407,6 +593,11 @@ begin
     WithEngine(PORT_BASE + 3, ConfigRateLimit,      TestRateLimit);
     WithEngine(PORT_BASE + 4, ConfigCORS,           TestCORS);
     WithEngine(PORT_BASE + 5, ConfigRequestLog,     TestRequestLog);
+    WithEngine(PORT_BASE + 6, ConfigTrace,          TestTrace);
+    WithEngine(PORT_BASE + 7, ConfigAnalytics,      TestAnalytics);
+    WithEngine(PORT_BASE + 8, ConfigRedirect,       TestRedirect);
+    WithEngine(PORT_BASE + 9, ConfigBasicAuth,      TestBasicAuth);
+    WithEngine(PORT_BASE + 10, ConfigFileSession,   TestFileSession);
   except
     on E: Exception do
     begin

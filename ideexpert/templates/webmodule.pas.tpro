@@ -117,29 +117,19 @@ begin
   fMVC := TMVCEngine.Create(Self,
     procedure(Config: TMVCConfig)
     begin
-      //default content-type
       Config[TMVCConfigKey.DefaultContentType] := dotEnv.Env('dmvc.default.content_type', {{:default_media_type}});
-      //default content charset
       Config[TMVCConfigKey.DefaultContentCharset] := dotEnv.Env('dmvc.default.content_charset', TMVCConstants.DEFAULT_CONTENT_CHARSET);
-      //unhandled actions are permitted?
       Config[TMVCConfigKey.AllowUnhandledAction] := dotEnv.Env('dmvc.allow_unhandled_actions', 'false');
-      //enables or not system controllers loading (available only from localhost requests)
       Config[TMVCConfigKey.LoadSystemControllers] := dotEnv.Env('dmvc.load_system_controllers', 'true');
-      //default view file extension (always html for better editor support)
       Config[TMVCConfigKey.DefaultViewFileExtension] := dotEnv.Env('dmvc.default.view_file_extension', 'html');
-      //view path (templates folder at same level as executable)
       Config[TMVCConfigKey.ViewPath] := dotEnv.Env('dmvc.view_path', TPath.Combine(AppPath, 'templates'));
 {{if program_ssv_templatepro}}
-      //use cache for server side views (use "false" in debug and "true" in production for faster performances
+      // ViewCache: false for development, true for production
       Config[TMVCConfigKey.ViewCache] := dotEnv.Env('dmvc.view_cache', 'false');
 {{endif}}
-      //Max Record Count for automatic Entities CRUD
       Config[TMVCConfigKey.MaxEntitiesRecordCount] := dotEnv.Env('dmvc.max_entities_record_count', IntToStr(TMVCConstants.MAX_RECORD_COUNT));
-      //Enable Server Signature in response
       Config[TMVCConfigKey.ExposeServerSignature] := dotEnv.Env('dmvc.expose_server_signature', 'false');
-      //Enable X-Powered-By Header in response
       Config[TMVCConfigKey.ExposeXPoweredBy] := dotEnv.Env('dmvc.expose_x_powered_by', 'true');
-      // Max request size in bytes
       Config[TMVCConfigKey.MaxRequestSize] := dotEnv.Env('dmvc.max_request_size', IntToStr(TMVCConstants.DEFAULT_MAX_REQUEST_SIZE));
     end);
 {{if @(program_ssv_any or webmodule_middleware_staticfiles)}}
@@ -158,39 +148,24 @@ begin
 {{if program_ssv_any}}
   fMVC.AddController(TAPIController);
 {{endif}}
-  // Controllers - END
 {{if program_ssv_templatepro}}
-
-  // Server Side View
   fMVC.SetViewEngine(TMVCTemplateProViewEngine);
-  // Server Side View - END
 {{endif}}
 {{if program_ssv_webstencils}}
-
-  // Server Side View
   fMVC.SetViewEngine(TMVCWebStencilsViewEngine);
-  // Server Side View - END
 {{endif}}
 {{if program_ssv_mustache}}
-
-  // Server Side View
   fMVC.SetViewEngine(TMVCMustacheViewEngine);
-  // Server Side View - END
 {{endif}}
 
 {{if webmodule_middleware_ratelimit}}
 
   LRateLimitMiddleware := TMVCRateLimitMiddleware.Create(
-    10,           // Max requests
-    60,           // Window in seconds
-    rlkIPAddress  // Rate limit by IP address
+    10,           // max requests
+    60,           // window seconds
+    rlkIPAddress
   );
-
-  // Exclude health check endpoint from rate limiting (uncomment and configure)
   // LRateLimitMiddleware.AddExcludedPath('/health');
-  // LRateLimitMiddleware.AddExcludedPath('/metrics');
-
-  // Set custom callback for rate limit exceeded event
   LRateLimitMiddleware.SetOnRateLimitExceeded(
   procedure(const AContext: TWebContext; const AKey: string;
     const ALimit: Integer; const AWindowSeconds: Integer)
@@ -202,23 +177,17 @@ begin
 {{endif}}
 {{if webmodule_middleware_jwt}}
 
-  // Configure JWT claims
   LJWTClaimsSetup := procedure(const JWT: TJWT)
     begin
       JWT.Claims.Issuer := dotEnv.Env('JWT_ISSUER', '{{:program_name}}');
-      JWT.Claims.ExpirationTime := Now + OneHour; // valid for 1 hour
-      JWT.Claims.NotBefore := Now - OneMinute * 5; // valid since 5 minutes ago
+      JWT.Claims.ExpirationTime := Now + OneHour;
+      JWT.Claims.NotBefore := Now - OneMinute * 5;
       JWT.Claims.IssuedAt := Now;
-      // Add custom claims as needed:
       // JWT.CustomClaims['app'] := '{{:program_name}}';
     end;
 {{if webmodule_middleware_jwt_asymmetric}}
 
-  // RSA asymmetric JWT signer (RS256)
-  // Requires TaurusTLS in Delphi search path and OpenSSL DLLs in output directory.
-  // Generate keys with:
-  //   openssl genrsa -out jwt-private.pem 2048
-  //   openssl rsa -in jwt-private.pem -pubout -out jwt-public.pem
+  // RS256: generate keys with openssl genrsa / openssl rsa -pubout
   LSigner := TRSAJWTSigner.CreateFromFiles(
     JWT_RS256,
     dotEnv.Env('JWT_PRIVATE_KEY_FILE', TPath.Combine(AppPath, 'jwt-private.pem')),
@@ -229,7 +198,6 @@ begin
 
   // Middleware
 {{if program_ssv_any}}
-  // Redirect root to web UI
   fMVC.AddMiddleware(TMVCRedirectMiddleware.Create(['/'], '/web'));
 {{endif}}
 {{if webmodule_middleware_ratelimit}}
@@ -237,11 +205,7 @@ begin
 {{endif}}
 {{if webmodule_middleware_jwt}}
 {{if program_ssv_any}}
-  // JWT Cookie Authentication (stateless session via HTTP-only cookie)
-  // Recommended for web applications served by this same server.
-  // The JWT token IS the session: it contains username, roles and custom claims.
-  // No server-side session storage needed - any node in a cluster can validate the token.
-  // For mutable session data (cart, wizard state), use a database or Redis instead.
+  // JWT cookie auth (HTTP-only cookie, for browser clients)
   fMVC.AddMiddleware(
     UseJWTCookieAuthentication(
       {{:authentication_classname}}.Create,
@@ -251,20 +215,16 @@ begin
 {{else}}
       dotEnv.Env('JWT_SECRET', 'change-this-secret-in-production-use-strong-key'),
 {{endif}}
-      '/login',   // Login URL (POST username & password here)
-      '/logout',  // Logout URL
+      '/login',
+      '/logout',
       [TJWTCheckableClaim.ExpirationTime, TJWTCheckableClaim.NotBefore, TJWTCheckableClaim.IssuedAt],
-      300  // Leeway seconds (5 minutes)
+      300  // leeway seconds
     )
-    // For local development with HTTP, disable Secure flag.
-    // In production with HTTPS, remove this line!
+    // WARNING: SetCookieSecure(False) for HTTP dev; remove in production (HTTPS).
     .SetCookieSecure(dotEnv.Env('JWT_COOKIE_SECURE', False))
   );
 {{else}}
-  // JWT Bearer Authentication (stateless via Authorization header)
-  // Recommended for REST APIs consumed by mobile apps, SPAs, or other services.
-  // Clients send the token as: Authorization: Bearer <token>
-  // The JWT token contains username, roles and custom claims - no server-side session needed.
+  // JWT Bearer auth (Authorization header, for API clients)
   fMVC.AddMiddleware(
     UseJWTMiddleware(
       {{:authentication_classname}}.Create,
@@ -274,9 +234,9 @@ begin
 {{else}}
       dotEnv.Env('JWT_SECRET', 'change-this-secret-in-production-use-strong-key'),
 {{endif}}
-      '/login',   // Login URL (POST username & password here)
+      '/login',
       [TJWTCheckableClaim.ExpirationTime, TJWTCheckableClaim.NotBefore, TJWTCheckableClaim.IssuedAt],
-      300  // Leeway seconds (5 minutes)
+      300  // leeway seconds
     )
   );
 {{endif}}
@@ -288,8 +248,7 @@ begin
   fMVC.AddMiddleware(UseFileSessionMiddleware({{:webmodule_middleware_session_timeout}}, False, TPath.Combine(AppPath, 'sessions')));
 {{endif}}
 {{if webmodule_middleware_session_database}}
-  // Database session requires ActiveRecord middleware to be configured first
-  // Make sure to create the dmvc_sessions table in your database
+  // Database session: requires ActiveRecord middleware + dmvc_sessions table
   fMVC.AddMiddleware(UseDatabaseSessionMiddleware({{:webmodule_middleware_session_timeout}}));
 {{endif}}
 {{if webmodule_middleware_analytics}}
@@ -319,9 +278,7 @@ begin
   // Middleware - END
 {{if program_ssv_templatepro}}
 
-  // Exception handler for server-side views (browser requests only)
-  // If the client accepts text/html and templates/error.html exists,
-  // renders a user-friendly error page instead of a JSON error response.
+  // Render templates/error.html for browser requests; JSON for API clients.
   fMVC.SetExceptionHandler(
     procedure(E: Exception; SelectedController: TMVCController;
       WebContext: TWebContext; var ExceptionHandled: Boolean)
@@ -331,7 +288,6 @@ begin
       lFullTemplatePath, lTemplateCodePath: String;
     begin
       ExceptionHandled := False;
-      // Only handle errors for browser requests (Accept: text/html)
       if not WebContext.Request.ClientPreferHTML then
         Exit;
       lFullTemplatePath := TPath.Combine(AppPath, WebContext.Config[TMVCConfigKey.ViewPath]);
@@ -357,34 +313,12 @@ begin
 {{endif}}
 {{if jsonrpc_generate}}
 
-  // JSON-RPC 2.0 endpoint at /jsonrpc
-  // A new instance of {{:jsonrpc_classname}} is created for each request.
-  // Use /jsonrpc/describe (GET) to see auto-generated method documentation.
+  // JSON-RPC 2.0 endpoint at /jsonrpc. GET /jsonrpc/describe shows auto-generated docs.
   fMVC.PublishObject(
     function : TObject
     begin
       Result := {{:jsonrpc_classname}}.Create;
     end, '/jsonrpc');
-
-  // Uncomment below to add a custom exception handler for JSON-RPC errors.
-  // This allows you to intercept exceptions and return custom error codes/messages.
-  //
-  // fMVC.PublishObject(
-  //   function : TObject
-  //   begin
-  //     Result := {{:jsonrpc_classname}}.Create;
-  //   end, '/jsonrpc',
-  //   procedure(Exc: Exception; WebContext: TWebContext;
-  //     var ErrorInfo: TMVCJSONRPCExceptionErrorInfo;
-  //     var ExceptionHandled: Boolean)
-  //   begin
-  //     if Exc is EDatabaseError then
-  //     begin
-  //       ExceptionHandled := True;
-  //       ErrorInfo.Code := -32050;
-  //       ErrorInfo.Msg := 'Database error: ' + Exc.Message;
-  //     end;
-  //   end);
 {{endif}}
 
 end;

@@ -14,10 +14,6 @@ uses
   System.SysUtils, MVCFramework.WebSocket, MVCFramework.Logger;
 
 
-  /// <summary>
-  /// Per-client session data
-  /// This object is created in OnClientConnect and automatically freed on disconnect
-  /// </summary>
 type
   TWSClientSessionData = class
   private
@@ -42,7 +38,6 @@ var
 begin
   LWSServer := TMVCWebSocketServer.Create(aWSPort);
   try
-    // Handle client connection - send welcome message to all
     LWSServer.OnClientConnect := procedure(AClient: TWebSocketClient)
     var
       LWelcomeMsg: string;
@@ -54,17 +49,14 @@ begin
       AClient.Broadcast(LWelcomeMsg);
     end;
 
-    // Handle incoming text messages - broadcast to all clients
     LWSServer.OnMessage := procedure(AClient: TWebSocketClient; const AMessage: string)
     var
       LChatMsg: string;
     begin
-      // Format and broadcast message to all clients
       LChatMsg := Format('[%s]: %s', [AClient.Username, AMessage]);
       AClient.Broadcast(LChatMsg);
     end;
 
-    // Setup event handlers
     LWSServer.OnLog := procedure(const AMessage: string)
     begin
       LogI(Format('[%s] %s', [TimeToStr(Now), AMessage]));
@@ -75,7 +67,6 @@ begin
       AMessage := '';
     end;
 
-    // Handle client disconnection - notify remaining users
     LWSServer.OnClientDisconnect := procedure(AClient: TWebSocketClient)
     begin
       //

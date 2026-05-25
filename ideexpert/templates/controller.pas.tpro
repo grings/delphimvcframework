@@ -39,8 +39,7 @@ type
     [MVCProduces(TMVCMediaType.TEXT_HTML)]
     function About: String;
 
-    // HTML fragment endpoints - return partial HTML snippets (no full page)
-    // Use these for AJAX/HTMX partial updates
+    // HTMX fragment endpoints — return partial HTML, no full page
     [MVCPath('/fragment/clock')]
     [MVCHTTPMethod([httpGET])]
     [MVCProduces(TMVCMediaType.TEXT_HTML)]
@@ -111,7 +110,6 @@ begin
 {$ENDIF}
 {{endif}}
 {{if program_ssv_any}}
-  // Page-specific ViewData (global data is set in OnBeforeAction)
   ViewData['current_date'] := FormatDateTime('dddd, dd mmmm yyyy', Now);
   ViewData['compiler_version'] := {$IF CompilerVersion >= 37}'Delphi 13 Florence'
     {$ELSEIF CompilerVersion >= 36}'Delphi 12 Athens'
@@ -121,10 +119,8 @@ begin
     {$ELSEIF CompilerVersion >= 32}'Delphi 10.2 Tokyo'
     {$ELSE}'Delphi'{$ENDIF};
 
-  // Render the home/index view (extends baselayout.html)
   Result := RenderView('home/index');
 {{else}}
-  //use Context property to access to the HTTP request and response
   Result := '<p>Hello <strong>DelphiMVCFramework</strong> World</p>' +
             '<p><small>dmvcframework-' + DMVCFRAMEWORK_VERSION + '</small></p>';
 {{endif}}
@@ -138,8 +134,6 @@ end;
 
 function {{:controller_classname}}.GetClockFragment: String;
 begin
-  // Returns an HTML fragment (not a full page)
-  // Use this pattern for AJAX/HTMX partial updates
   Result :=
     '<p>Server time: <strong>' + FormatDateTime('hh:nn:ss', Now) + '</strong></p>' +
     '<p>Server date: ' + FormatDateTime('dddd, dd mmmm yyyy', Now) + '</p>';
@@ -147,7 +141,6 @@ end;
 
 function {{:controller_classname}}.GetInfoFragment: String;
 begin
-  // Returns an HTML fragment with server information
   Result :=
     '<p><strong>Application:</strong> {{:program_name}}</p>' +
     '<p><strong>DMVC Version:</strong> ' + DMVCFRAMEWORK_VERSION + '</p>' +

@@ -84,11 +84,8 @@ end;
 
 procedure TDMVCFrameworkWindowsService.ServiceCreate(Sender: TObject);
 begin
-  // DMVCFramework Specific Configurations
   MVCSerializeNulls := True;
-
-  // BootConfigU.Boot: dotEnv + logger + profiler. Must run before LogI.
-  Boot;
+  Boot; // dotEnv + logger + profiler; must run before LogI
 {{if program_sqids}}
 
   TMVCSqids.SQIDS_ALPHABET := dotEnv.Env('dmvc.sqids.alphabet', '{{:scrambled_alphabet}}');
@@ -154,12 +151,7 @@ begin
 
     fServer := TMVCServerFactory.CreateIndyDirect(fEngine);
 {{if program_server_protocol|eq,"https"}}
-    // -----------------------------------------------------------------
-    // HTTPS via TaurusTLS (OpenSSL 1.1.1+).
-    // The TaurusTLSIndyConfigurator function comes from the unit
-    // MVCFramework.Server.HTTPS.TaurusTLS (see uses clause above).
-    // To switch TLS stack, replace that unit + this configurator only.
-    // -----------------------------------------------------------------
+    // TaurusTLS (OpenSSL 1.1.1+). Replace MVCFramework.Server.HTTPS.TaurusTLS to switch TLS stack.
     fServer.HTTPSConfigurator := TaurusTLSIndyConfigurator();
     fServer.UseHTTPS := True;
     fServer.CertFile := dotEnv.Env('https.cert.cacert', 'certificates\localhost.crt');

@@ -1,39 +1,16 @@
 {{include "_license_header.tpro"}}
 unit RoutesU;
 
-// Minimal API WebApp routes — best-practice scaffold.
-//
-// URL surface:
-//   GET  /              public   home page
-//   GET  /time          public   HTMX fragment (hx-get target on the home page)
-//   GET  /login         public   login form
-//   POST /login         public   form-urlencoded binding -> cookie session
-//   GET  /admin/        PROTECTED RequireLogin filter
-//   GET  /admin/logout  PROTECTED
-//
-// Design choices worth noticing:
-//
-// 1. No controller class. Every route is an anonymous function returning
-//    IMVCResponse, registered on a group built from ARoot.AsWeb. .AsWeb stamps
-//    each route rkWeb, so none of them surface in the OpenAPI spec.
-//
-// 2. Session and auth are endpoint FILTERS, not engine-wide middleware:
-//      - MemorySession(...) is attached to the public group; nested groups
-//        (e.g. /admin) inherit it.
-//      - RequireLogin(...) is attached to the /admin group only.
-//    Filters compose via .Use(...); add logging, rate-limit, role checks the
-//    same way.
-//
-// 3. ViewData and RenderView are GLOBAL functions resolved against a per-request
-//    threadvar set by the minimal-API dispatcher. The 'ispage' flag drives
-//    TemplatePro layout wrapping: a full page on a normal request, the body
-//    fragment alone on an HTMX request.
+// Minimal-API WebApp routes: lambda handlers on groups from ARoot.AsWeb.
+// Session/auth are endpoint filters (.Use); 'ispage' toggles full page vs
+// HTMX fragment for the TemplatePro layout.
 
 interface
 
 uses
   MVCFramework,
-  MVCFramework.MinimalAPI;
+  MVCFramework.MinimalAPI,
+  MVCFramework.Filters;
 
 procedure ConfigureRoutes(const ARoot: TMVCRouteGroup<TObject>);
 
@@ -45,22 +22,14 @@ uses
   MVCFramework.HTMX;
 
 type
-  // Form-binding record for POST /login. Each field maps to a form-urlencoded
-  // field via [MVCFromContentField] — same '(name)' convention as
-  // MVCFromQueryString / MVCFromHeader.
+  // Form-urlencoded binding for POST /login via [MVCFromContentField]
+  // (same '(name)' convention as MVCFromQueryString / MVCFromHeader).
   TLoginForm = record
     [MVCFromContentField('username')] Username: string;
     [MVCFromContentField('password')] Password: string;
   end;
 
-// Console request logging is automatic: TMVCEngine fires OnRouterLog after
-// every dispatched route (controller-based or minimal-API), and the default
-// handler emits a Gin-style line through DMVCColorConsole. No filter needed
-// here.
-
-// Endpoint filter: short-circuit with a redirect to ARedirectTo unless the
-// session carries a 'user' value. Returned as a TMVCEndpointFilter so it can be
-// attached with .Use(...) to a group built via .AsWeb.
+// Redirect to ARedirectTo unless the session carries a 'user'.
 function RequireLogin(const ARedirectTo: string): TMVCEndpointFilter;
 begin
   Result :=
@@ -78,15 +47,7 @@ var
   lWeb: TMVCRouteGroup<TObject>;
   lAdmin: TMVCRouteGroup<TObject>;
 begin
-  // Public web surface. .AsWeb marks every route rkWeb. MemorySession is a
-  // group-level filter inherited by every nested group (e.g. /admin below) —
-  // no classic IMVCMiddleware involved.
-  //
-  // Any handler that needs the request context / session / HTMX detection
-  // declares TWebContext as a generic argument; the resolver injects the
-  // live context. Same discipline as ASP.NET Core Minimal APIs: typed args
-  // only, no static ambient helpers (except ViewData, which is data flowing
-  // OUT to the view engine — different semantics).
+  // Public surface; MemorySession is inherited by nested groups.
   lWeb := ARoot.AsWeb.Use(MemorySession(30));
 
   lWeb.MapGet<TWebContext>('/',
@@ -96,8 +57,7 @@ begin
       Result := RenderView('pages/home');
     end);
 
-  // HTMX fragment: the hx-get target on the home page. Always a fragment
-  // (ispage = False) so TemplatePro renders the block without the layout.
+  // HTMX fragment (rendered without the layout).
   lWeb.MapGet('/time',
     function: IMVCResponse
     begin
@@ -113,9 +73,6 @@ begin
       Result := RenderView('pages/login');
     end);
 
-  // Form binding: TLoginForm fields are filled from the form-urlencoded body
-  // via [MVCFromContentField]. The handler also pulls the context so it can
-  // write to the cookie session.
   lWeb.MapPost<TWebContext, TLoginForm>('/login',
     function (Ctx: TWebContext; F: TLoginForm): IMVCResponse
     begin
@@ -133,9 +90,7 @@ begin
       end;
     end);
 
-  // Session-protected admin subtree. Built as a nested Prefix of lWeb so it
-  // inherits the MemorySession filter; .Use(RequireLogin) sits ahead of every
-  // handler in this group — if it short-circuits, the handler never runs.
+  // Login-protected admin subtree (inherits MemorySession via Prefix).
   lAdmin := lWeb.Prefix('/admin').Use(RequireLogin('/login'));
 
   lAdmin.MapGet<TWebContext>('/',

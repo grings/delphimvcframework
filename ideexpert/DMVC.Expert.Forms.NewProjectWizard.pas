@@ -200,6 +200,7 @@ type
     function GetProjectName: string;
     function GetProjectFolder: string;
     procedure UpdateProjectNameHint;
+    procedure UpdateWebModuleVisibility;
     procedure NavigateToPage(APageIndex: Integer);
     function GetPageCount: Integer;
     function MapPageIndex(AVisualIndex: Integer): Integer;
@@ -448,8 +449,6 @@ begin
     // each edit together with its caption label.
     edtControllerClassName.Visible := False;
     lblClassName.Visible := False;
-    edtWebModuleName.Visible := False;
-    lblWbModule.Visible := False;
     chkCreateIndexMethod.Visible := False;
     chkCreateActionFiltersMethods.Visible := False;
     chkProfileActions.Visible := False;
@@ -463,8 +462,6 @@ begin
     chkCreateCRUDMethods.Enabled := True;
     edtControllerClassName.Visible := True;
     lblClassName.Visible := True;
-    edtWebModuleName.Visible := True;
-    lblWbModule.Visible := True;
     chkCreateIndexMethod.Visible := True;
     chkCreateActionFiltersMethods.Visible := True;
     chkProfileActions.Visible := True;
@@ -472,6 +469,19 @@ begin
     EdtJSONRPCClassName.Visible := True;
     lblJSONRPCClassName.Visible := True;
   end;
+  UpdateWebModuleVisibility;
+end;
+
+procedure TfrmDMVCNewProject.UpdateWebModuleVisibility;
+var
+  lShow: Boolean;
+begin
+  // WebModule class name only matters for WebBroker-based projects
+  // (cbServerEngine.ItemIndex = 0). Indy Direct (1) and HTTP.sys (2)
+  // do not generate a TWebModule. Hidden in Minimal-API mode regardless.
+  lShow := (not fIsMinimalAPIPreset) and (cbServerEngine.ItemIndex = 0);
+  edtWebModuleName.Visible := lShow;
+  lblWbModule.Visible := lShow;
 end;
 
 procedure TfrmDMVCNewProject.InitWizardPages;
@@ -506,6 +516,7 @@ begin
   edtProjectFolder.TextHint := lDefaultProjectsFolder;
 
   UpdateProjectNameHint;
+  UpdateWebModuleVisibility;
 
   {$IF not Defined(FASTCGI)}
   rgServerProtocol.Items.Delete(rgServerProtocol.Items.Count-1);
@@ -633,6 +644,8 @@ begin
   // only when that algorithm is selected.
   lblJWTAsymmetricWarning.Visible := rgJWTAlgorithm.ItemIndex = 2;
   lblJWTAsymmetricWarning.Enabled := rgJWTAlgorithm.ItemIndex = 2;
+
+  UpdateWebModuleVisibility;
 end;
 
 procedure TfrmDMVCNewProject.btnFinishClick(Sender: TObject);

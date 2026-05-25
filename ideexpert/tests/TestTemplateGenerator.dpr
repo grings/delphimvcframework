@@ -829,6 +829,10 @@ begin
         TPath.Combine(AOutputDir, 'templates\pages\time.html'),
         TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
           'views\minimal_time.tpro'), TEncoding.UTF8));
+      TFile.WriteAllText(
+        TPath.Combine(AOutputDir, 'templates\error.html'),
+        TFile.ReadAllText(TPath.Combine(TTestTemplateEngine.GetTemplatePath,
+          'views\error_view.tpro'), TEncoding.UTF8));
     end;
 
     // Create .gitignore file
@@ -1613,6 +1617,10 @@ begin
   LTestCase.Config.B[TConfigKey.program_htmx] := True;
   LTestCase.Config.B[TConfigKey.controller_index_methods_generate] := False;
   LTestCase.Config.B['controller.main.generate'] := False;
+  LTestCase.ExpectedFiles := ['templates/baselayout.html', 'templates/error.html',
+    'templates/pages/home.html', 'templates/pages/login.html',
+    'templates/pages/admin_home.html', 'templates/pages/time.html'];
+  LTestCase.ForbiddenFiles := [];
   ATestCases.Add(LTestCase);
 
   // Test 54: Indy Direct + Minimal API + full HTTPFilter stack.
@@ -1635,6 +1643,8 @@ begin
   LTestCase.Config.B[TConfigKey.webmodule_middleware_etag] := True;
   LTestCase.Config.B[TConfigKey.webmodule_middleware_staticfiles] := True;
   LTestCase.Config.B[TConfigKey.webmodule_middleware_ratelimit] := True;
+  LTestCase.ExpectedFiles := [];
+  LTestCase.ForbiddenFiles := [];
   ATestCases.Add(LTestCase);
 
   // Test 55: Indy Direct + Minimal API WebApp + StaticFiles + ETag +
@@ -1654,6 +1664,10 @@ begin
   LTestCase.Config.B[TConfigKey.webmodule_middleware_compression] := True;
   LTestCase.Config.B[TConfigKey.webmodule_middleware_etag] := True;
   LTestCase.Config.B[TConfigKey.webmodule_middleware_staticfiles] := True;
+  LTestCase.ExpectedFiles := ['templates/baselayout.html', 'templates/error.html',
+    'templates/pages/home.html', 'templates/pages/login.html',
+    'templates/pages/admin_home.html', 'templates/pages/time.html'];
+  LTestCase.ForbiddenFiles := [];
   ATestCases.Add(LTestCase);
 end;
 

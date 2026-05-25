@@ -1,33 +1,7 @@
 {{include "_license_header.tpro"}}
 unit RoutesU;
 
-// Minimal API routes — best-practice scaffold.
-//
-// URL surface:
-//   GET    /                          -> 302 redirect to /api/v1/people
-//   GET    /api/v1/people             public, list
-//   GET    /api/v1/people/(id:int)    public, by id
-//   POST   /api/v1/people             public, create
-//   GET    /api/v1/admin/health       PROTECTED (Bearer token)
-//   DELETE /api/v1/admin/people/(id)  PROTECTED (Bearer token)
-//
-// Design choices worth noticing:
-//
-// 1. Each resource has its own Register* procedure (RegisterPeopleRoutes,
-//    RegisterAdminRoutes). Add a new resource = add a new Register*.
-//
-// 2. The PATH PREFIX of each resource is declared in ConfigureRoutes (one
-//    place to scan to see the full URL surface). The Register* procedure
-//    receives an already-prefixed group via AGroup and registers routes
-//    RELATIVE to it. The procedures are agnostic about the absolute path,
-//    so the same resource can be remounted under a different prefix (e.g.
-//    a tenant-scoped /t/(tenant)/api/v1/people) without modification.
-//
-// 3. Authentication is an endpoint FILTER applied per group (NOT engine-
-//    wide middleware). RegisterAdminRoutes attaches BearerAuthFilter on
-//    its own group, so /api/v1/admin/* requires a Bearer token while
-//    /api/v1/people/* stays public. Filters scale via composition: add
-//    .Use(...) for logging, rate-limit, role checks, etc.
+// Minimal API routes: versioned /api/v1 surface, public people CRUD + Bearer-protected admin group.
 
 interface
 
@@ -47,18 +21,8 @@ uses
   {{:entity_unit_name}}{{if program_service_container_generate}},
   {{:program_service_container_unit_name}}{{endif}};
 
-// =============================================================================
-// Endpoint filters
-// =============================================================================
-
-// Console request logging is automatic: TMVCEngine fires OnRouterLog after
-// every dispatched route (controller-based or minimal-API), and the default
-// handler emits a Gin-style line through DMVCColorConsole. No filter needed
-// here.
-
 // Short-circuits with 401 unless the request carries a Bearer token.
-// Replace the placeholder check with your real validator (JWT signer,
-// opaque-token store, ...).
+// Replace the placeholder check with your real validator (JWT signer, opaque-token store, ...).
 function BearerAuthFilter: TMVCEndpointFilter;
 begin
   Result := function (const Ctx: TWebContext;
@@ -74,17 +38,8 @@ begin
     end;
 end;
 
-// =============================================================================
-// Per-resource registration
-// =============================================================================
-
-// AGroup arrives already mounted on /api/v1/people (see ConfigureRoutes).
-// Routes are registered with paths RELATIVE to that prefix — '' is the
-// collection, '/($id:int)' is the item. No filter is applied here: every
-// route below is public.
 procedure RegisterPeopleRoutes(const AGroup: TMVCRouteGroup<TObject>);
 begin
-  // GET /api/v1/people
 {{if program_service_container_generate}}
   AGroup.MapGet<IPeopleService>('',
     function (PeopleService: IPeopleService): IMVCResponse
@@ -110,15 +65,13 @@ begin
     end);
 {{endif}}
 
-  // GET /api/v1/people/(id) — the :int constraint rejects non-numeric ids
-  // before the handler runs (request falls through to a 404).
+  // :int constraint rejects non-numeric ids before the handler runs.
   AGroup.MapGet<Integer>('/($id:int)',
     function (ID: Integer): IMVCResponse
     begin
       Result := Ok(TPerson.Create(ID, 'Daniele', 'Teti', EncodeDate(1979, 11, 4)));
     end);
 
-  // POST /api/v1/people
   AGroup.MapPost<TPerson>('',
     function (Person: TPerson): IMVCResponse
     begin
@@ -127,25 +80,19 @@ begin
     end);
 end;
 
-// AGroup arrives already mounted on /api/v1/admin (see ConfigureRoutes).
-// The auth filter is attached HERE, locally: every route registered on
-// lAdmin inherits BearerAuthFilter. Public routes registered elsewhere
-// remain unaffected (TMVCRouteGroup is a value record — Use() returns a
-// modified COPY, not a mutation of AGroup).
+// Auth filter applied locally: every route on lAdmin requires Bearer. Use() returns a modified copy.
 procedure RegisterAdminRoutes(const AGroup: TMVCRouteGroup<TObject>);
 var
   lAdmin: TMVCRouteGroup<TObject>;
 begin
   lAdmin := AGroup.Use(BearerAuthFilter());
 
-  // GET /api/v1/admin/health — auth required.
   lAdmin.MapGet('/health',
     function: IMVCResponse
     begin
       Result := Ok('admin ok');
     end);
 
-  // DELETE /api/v1/admin/people/(id) — destructive endpoint, auth required.
   lAdmin.MapDelete<Integer>('/people/($id:int)',
     function (ID: Integer): IMVCResponse
     begin
@@ -154,31 +101,19 @@ begin
     end);
 end;
 
-// =============================================================================
-// Wiring
-// =============================================================================
-
 procedure ConfigureRoutes(const ARoot: TMVCRouteGroup<TObject>);
 var
   lApiV1: TMVCRouteGroup<TObject>;
 begin
-  // Convenience redirect from root to the canonical API entry point.
   ARoot.MapGet('',
     function: IMVCResponse
     begin
       Result := Redirect('/api/v1/people');
     end);
 
-  // Versioned base group. Sub-resources are mounted UNDER it by passing
-  // a prefixed copy to each Register* procedure.
   lApiV1 := ARoot.Prefix('/api/v1');
-
-  // /api/v1/people — public surface.
   RegisterPeopleRoutes(lApiV1.Prefix('/people'));
-
-  // /api/v1/admin/* — auth gate is set INSIDE RegisterAdminRoutes (it
-  // calls AGroup.Use(BearerAuthFilter()) on the group it receives).
-  // We just declare the path prefix here.
+  // Auth gate is applied inside RegisterAdminRoutes via .Use(BearerAuthFilter()).
   RegisterAdminRoutes(lApiV1.Prefix('/admin'));
 end;
 

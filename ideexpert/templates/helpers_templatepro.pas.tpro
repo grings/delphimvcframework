@@ -33,7 +33,6 @@ procedure TemplateProContextConfigure;
 begin
   TTProConfiguration.OnContextConfiguration := procedure(const CompiledTemplate: ITProCompiledTemplate)
   begin
-    // These filters will be available to the TemplatePro views as if they were the standard ones
     CompiledTemplate.AddFilter('MyHelper1', MyHelper1);
     CompiledTemplate.AddFilter('MyHelper2', MyHelper2);
 

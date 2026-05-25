@@ -35,7 +35,7 @@ unit RoutesU;
 interface
 
 uses
-  MVCFramework, MVCFramework.MinimalAPI;
+  MVCFramework, MVCFramework.MinimalAPI, MVCFramework.Filters;
 
 procedure ConfigureRoutes(const ARoot: TMVCRouteGroup<TObject>);
 

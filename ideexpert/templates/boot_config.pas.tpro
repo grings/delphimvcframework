@@ -1,12 +1,11 @@
 {{include "_license_header.tpro"}}
 unit BootConfigU;
 
+// Startup configuration: dotEnv, LoggerPro, DMVC profiler, TemplatePro context.
+// Call Boot once, before any LogI/LogW/LogE call.
+
 interface
 
-/// Runs all startup configuration for the generated project: dotEnv,
-/// LoggerPro logger, DMVC profiler and (when present) the TemplatePro
-/// context. Call this once, as the first statement of the .dpr begin..end
-/// block, before any LogI/LogW/LogE call.
 procedure Boot;
 
 implementation
@@ -61,10 +60,8 @@ uses
 
 procedure ConfigDotEnv;
 begin
-  // Register the dotEnv delegate before the logger reads from it. The
-  // .UseLogger hook is intentionally omitted: DMVC's default dotEnv fallback
-  // calls LogI during bootstrap, which would force a default logger to be
-  // created BEFORE ConfigLogger installs the configured one.
+  // .UseLogger intentionally omitted: the dotEnv fallback calls LogI, which would
+  // create a default logger before ConfigLogger installs the configured one.
   dotEnvConfigure(
     function: IMVCDotEnv
     begin
@@ -86,6 +83,7 @@ var
 begin
 {{if logging_profile_fluent}}
   lBuilder := LoggerProBuilder
+    .WithDefaultMinimumLevel(TLogType.Debug)
 {{if logging_appender_console}}
     .WriteToConsole
       .WithUTF8Output
@@ -145,29 +143,16 @@ begin
 {{endif}}
 {{endif}}
 {{if logging_profile_json}}
-  // Logger configuration is loaded from a JSON file. The filename comes from
-  // dotEnv (key 'logger.config.file'), so per-environment .env files can point
-  // at different configs (loggerpro.dev.json, loggerpro.prod.json, ...).
-  //
-  // Renderer selection: the Console entry in loggerpro.json supports a
-  // "renderer" field resolved against LoggerPro's process-wide registry
-  // (LoggerPro.RendererRegistry). Built-in names include "Default", "NoTag",
-  // "LogFmt", "GinStyle"; DMVCFramework registers "DMVCColorConsole" from
-  // MVCFramework.Logger.ColorConsoleRenderer's initialization section.
-  //
-  // When ExeWatch is enabled, its config lives inside the JSON itself; adding
-  // LoggerPro.ExeWatchAppender to the uses clause registers the factory.
+  // Config loaded from JSON file (key 'logger.config.file' in dotEnv).
+  // Console "renderer" field resolves via LoggerPro.RendererRegistry; "DMVCColorConsole" is registered
+  // by MVCFramework.Logger.ColorConsoleRenderer's initialization section.
   lConfigFile := dotEnv.Env('logger.config.file', 'loggerpro.json');
   if not TPath.IsPathRooted(lConfigFile) then
     lConfigFile := TPath.Combine(AppPath, lConfigFile);
   lBuilder := TLoggerProConfig.BuilderFromJSONFile(lConfigFile); 
 {{endif}}
 {{if logging_profile_disabled}}
-  // Null logger: the callback appender is wired with a no-op procedure so every
-  // log entry is discarded with zero I/O. This keeps every LogI/LogW/LogE call
-  // site in the application valid while producing no output. To re-enable
-  // logging later, replace this branch with a real builder (WriteToConsole,
-  // WriteToFile, ...) and rebuild.
+  // Null logger: discards all log entries with zero I/O.
   lBuilder := LoggerProBuilder
     .WriteToCallback
       .WithCallback(

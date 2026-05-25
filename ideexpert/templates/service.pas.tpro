@@ -58,8 +58,7 @@ end;
 
 procedure TDMVCFrameworkWindowsService.ServiceCreate(Sender: TObject);
 begin
-  // BootConfigU.Boot: dotEnv + logger + profiler. Must run before LogI.
-  Boot;
+  Boot; // dotEnv + logger + profiler; must run before LogI
   if WebRequestHandler <> nil then
     WebRequestHandler.WebModuleClass := WebModuleClass;
   WebRequestHandlerProc.MaxConnections := 1024;
@@ -93,7 +92,6 @@ begin
     fServer := TIdHTTPWebBrokerBridge.Create(nil);
     try
 {{if program_server_protocol|eq,"https"}}
-      // HTTPS Configuration with TaurusTLS
       LTaurusTLSHandler := TTaurusTLSServerIOHandler.Create(fServer);
       LTaurusTLSHandler.SSLOptions.Mode := sslmServer;
       LTaurusTLSHandler.DefaultCert.PublicKey := dotEnv.Env('https.cert.cacert', 'certificates\localhost.crt');

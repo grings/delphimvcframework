@@ -158,7 +158,12 @@ contains
   MVCFramework.HttpSysApi in '..\..\sources\MVCFramework.HttpSysApi.pas',
   MVCFramework.HttpSys.Request in '..\..\sources\MVCFramework.HttpSys.Request.pas',
   MVCFramework.HttpSys.Response in '..\..\sources\MVCFramework.HttpSys.Response.pas',
-  MVCFramework.Server.HttpSys in '..\..\sources\MVCFramework.Server.HttpSys.pas';
+  MVCFramework.Server.HttpSys in '..\..\sources\MVCFramework.Server.HttpSys.pas',
+  MVCFramework.MinimalAPI in '..\..\sources\MVCFramework.MinimalAPI.pas',
+  MVCFramework.Filters in '..\..\sources\MVCFramework.Filters.pas',
+  MVCFramework.Middleware.StaticFiles in '..\..\sources\MVCFramework.Middleware.StaticFiles.pas',
+  MVCFramework.OpenAPI3 in '..\..\sources\MVCFramework.OpenAPI3.pas',
+  MVCFramework.Middleware.OpenAPI3 in '..\..\sources\MVCFramework.Middleware.OpenAPI3.pas';
 
 end.
 

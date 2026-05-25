@@ -640,8 +640,7 @@ begin
             .Replace('{{:program_name}}', AProjectName));
 
       SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'error.' + LTemplateExt,
-        LoadTemplate('views\error_view.tpro')
-          .Replace('{{:program_name}}', AProjectName));
+        LoadTemplate('views\error_view.tpro'));
     end
     else
     begin
@@ -671,6 +670,8 @@ begin
     SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'baselayout.html',
       LoadTemplate('views\minimal_baselayout.tpro')
         .Replace('{{:program_name}}', AProjectName));
+    SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'error.html',
+      LoadTemplate('views\error_view.tpro'));
     SaveFile('bin' + PathDelim + 'templates' + PathDelim + 'pages' + PathDelim + 'home.html',
       LoadTemplate('views\minimal_home.tpro')
         .Replace('{{:program_name}}', AProjectName));

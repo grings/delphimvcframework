@@ -21,9 +21,6 @@ procedure ConfigureEngine(AEngine: TMVCEngine);
 implementation
 
 uses
-  System.IOUtils,
-  System.DateUtils,
-  TemplatePro,
   MVCFramework.View.Renderers.TemplatePro,
   MVCFramework.Commons,
   MVCFramework.Logger,
@@ -46,45 +43,9 @@ begin
   // Server Side View - END
 
 
-  // Exception handler for server-side views (browser requests only)
-  AEngine.SetExceptionHandler(
-    procedure(E: Exception; SelectedController: TMVCController;
-      WebContext: TWebContext; var ExceptionHandled: Boolean)
-    var
-      lError: String;
-      lTemplateCode: String;
-      lFullTemplatePath, lTemplateCodePath: String;
-    begin
-      ExceptionHandled := False;
-      if not WebContext.Request.ClientPreferHTML then
-        Exit;
-      lFullTemplatePath := TPath.Combine(AppPath, WebContext.Config[TMVCConfigKey.ViewPath]);
-      lTemplateCodePath := TPath.Combine(lFullTemplatePath,
-        'error.' + WebContext.Config[TMVCConfigKey.DefaultViewFileExtension]);
-      if TFile.Exists(lTemplateCodePath) then
-      begin
-        if Assigned(E) then
-        begin
-          lError := E.Message;
-          LogException(E);
-        end
-        else
-        begin
-          lError := IntToStr(WebContext.Response.StatusCode) + ' ' +
-            HTTP_STATUS.ReasonStringFor(WebContext.Response.StatusCode);
-          LogE(lError);
-        end;
-        WebContext.Response.ContentType := TMVCMediaType.TEXT_HTML;
-        lTemplateCode := TFile.ReadAllText(lTemplateCodePath, TEncoding.UTF8);
-        WebContext.Response.Content := TTProCompiler.CompileAndRender(
-          lTemplateCode,
-          ['error', 'app_name', 'dmvc_version', 'current_year'],
-          [lError, 'TestProject', DMVCFRAMEWORK_VERSION, YearOf(Now)],
-          lFullTemplatePath);
-        ExceptionHandled := True;
-      end;
-    end
-  );
+  // Content-negotiated exception handler: HTML error page for browser requests,
+  // RFC 7807 problem+json for API clients.
+  AEngine.UseExceptionHandler('error', 'MinimalAPIWebAppShowcase');
 
 end;
 

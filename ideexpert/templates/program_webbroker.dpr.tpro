@@ -81,6 +81,14 @@ var
   LWSServer: TMVCWebSocketServer;
 {{endif}}
 begin
+{{if program_minimal_api}}
+  // Engine boots on built-in defaults (logged to console at startup).
+  // Pass a config callback as first arg instead of nil to override any TMVCConfigKey.
+{{if program_minimal_api_web}}
+  // IMPORTANT: ViewCache is OFF by default — enable it for production.
+{{endif}}
+  LServer := TMVCServerFactory.CreateWebBroker(nil, ConfigureEngine);
+{{else}}
   LServer := TMVCServerFactory.CreateWebBroker(
     procedure(Config: TMVCConfig)
     begin
@@ -110,9 +118,8 @@ begin
       Config[TMVCConfigKey.MaxRequestSize] := dotEnv.Env('dmvc.max_request_size', IntToStr(TMVCConstants.DEFAULT_MAX_REQUEST_SIZE));
     end,
     ConfigureEngine);
+{{endif}}
 {{if program_minimal_api}}
-  // Routes are intentionally separated from ConfigureEngine: this is the
-  // single line a developer scans first to find/edit URL handlers.
   ConfigureRoutes(LServer.Engine.Root);
 {{endif}}
 {{if program_server_protocol|eq,"https"}}
@@ -128,9 +135,6 @@ begin
     ' (WebBroker, Indy bridge). Press Ctrl+C to shut down.');
 {{endif}}
 {{if websocketserver_generate}}
-  // WebSocket bridge starts BEFORE the HTTP server so it is reachable
-  // as soon as RunAndWait binds the HTTP port; it is freed AFTER
-  // RunAndWait returns (the HTTP server has already been stopped).
   LWSServer := BuildWebSocketServer(dotEnv.Env('dmvc.wsserver.port', 9000));
   try
     LWSServer.Active := True;
@@ -140,8 +144,6 @@ begin
     LWSServer.Free;
   end;
 {{else}}
-  // RunAndWait: Listen + WaitForTerminationSignal + EnterInShutdownState +
-  // Stop. Console-only. For VCL/FMX/test hosts use Listen() + Stop().
   LServer.RunAndWait(APort);
 {{endif}}
   LServer := nil;
@@ -152,14 +154,8 @@ begin
   // ReportMemoryLeaksOnShutdown := True;
   IsMultiThread := True;
 
-  // DMVCFramework Specific Configurations
-  //   When MVCSerializeNulls = True empty nullables and nil are serialized as json null.
-  //   When MVCSerializeNulls = False empty nullables and nil are not serialized at all.
   MVCSerializeNulls := True;
-
-  // BootConfigU.Boot: dotEnv + logger + profiler (+ TemplatePro context if any).
-  // Must run before the first LogI. Edit BootConfigU to tune anything.
-  Boot;
+  Boot; // dotEnv + logger + profiler; must run before any LogI call
 
   LogI('** DMVCFramework Server ** build ' + DMVCFRAMEWORK_VERSION);
 {{if program_sqids}}

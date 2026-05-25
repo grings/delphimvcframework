@@ -75,8 +75,7 @@ procedure TDMVCFrameworkWindowsService.ServiceCreate(Sender: TObject);
 begin
   MVCSerializeNulls := True;
 
-  // BootConfigU.Boot: dotEnv + logger + profiler. Must run before LogI.
-  Boot;
+  Boot; // dotEnv + logger + profiler; must run before LogI
 {{if program_sqids}}
 
   TMVCSqids.SQIDS_ALPHABET := dotEnv.Env('dmvc.sqids.alphabet', '{{:scrambled_alphabet}}');

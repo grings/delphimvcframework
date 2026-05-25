@@ -7,46 +7,28 @@ uses
   MVCFramework, MVCFramework.Commons, MVCFramework.JSONRPC, JsonDataObjects;
 
 type
-  // This class is published as a JSON-RPC 2.0 endpoint.
-  // Each public method becomes a callable RPC method.
-  // - Functions  -> JSON-RPC Requests (client expects a result)
-  // - Procedures -> JSON-RPC Notifications (fire-and-forget, no result)
-
+  // Public methods = callable RPC methods. Functions = Requests; Procedures = Notifications (no result).
   {{:jsonrpc_classname}} = class
   public
-    // [MVCDoc] provides method documentation, visible at /jsonrpc/describe
-
-    // Basic method: string in, string out.
-    // [MVCJSONRPCAllowGET] allows calling this method via HTTP GET
-    // (default is POST only). Useful for simple queries.
+    // [MVCJSONRPCAllowGET] also allows HTTP GET (default: POST only).
     [MVCDoc('Reverses the input string. If AUpperCase is True, the result is also uppercased.')]
     [MVCJSONRPCAllowGET]
     function ReverseString(const Value: String; const AUpperCase: Boolean = False): String;
 
-    // Numeric method with error handling.
-    // Raises EMVCJSONRPCError if divisor is zero - the framework returns
-    // a proper JSON-RPC error response (not an HTTP error).
     [MVCDoc('Divides A by B. Raises a JSON-RPC error if B is zero.')]
     function Divide(const A, B: Double): Double;
 
-    // Date handling
     [MVCDoc('Returns the next Monday starting from the given date.')]
     function GetNextMonday(const ADate: TDate): TDate;
 
-    // Returns a JSON object - useful for structured data
     [MVCDoc('Returns server information as a JSON object.')]
     function GetServerInfo: TJDOJsonObject;
 
-    // Notification (procedure, not function).
-    // The client does NOT receive a response. The server returns HTTP 204.
-    // Use for fire-and-forget operations like logging or sending events.
+    // Notification: client sends no "id"; server returns HTTP 204, no body.
     [MVCDoc('Logs a message on the server. This is a notification - no response is sent back.')]
     procedure LogMessage(const AMessage: String; const ALevel: String = 'INFO');
 
-    // JSON-RPC Hooks - called automatically by the framework.
-    // OnBeforeCallHook: runs before each method invocation.
-    // OnAfterCallHook: runs after each method invocation (even on errors).
-    // Use for logging, authentication, metrics, etc.
+    // Hooks called before/after every method invocation.
     procedure OnBeforeCallHook(const Context: TWebContext; const JSONRequest: TJDOJsonObject);
     procedure OnAfterCallHook(const Context: TWebContext; const JSONResponse: TJDOJsonObject);
   end;
@@ -59,9 +41,6 @@ uses
 
 function {{:jsonrpc_classname}}.ReverseString(const Value: String; const AUpperCase: Boolean): String;
 begin
-  // AUpperCase has a default value (False).
-  // If the client omits this parameter in the JSON-RPC request,
-  // the framework uses the Delphi default value automatically.
   Result := System.StrUtils.ReverseString(Value);
   if AUpperCase then
     Result := Result.ToUpper;
@@ -69,9 +48,7 @@ end;
 
 function {{:jsonrpc_classname}}.Divide(const A, B: Double): Double;
 begin
-  // EMVCJSONRPCError generates a proper JSON-RPC error response.
-  // The HTTP status remains 200 (per JSON-RPC 2.0 spec).
-  // The error appears in the "error" field of the JSON-RPC response.
+  // EMVCJSONRPCError -> JSON-RPC error response (HTTP stays 200 per spec).
   if B = 0 then
     raise EMVCJSONRPCError.Create(JSONRPC_USER_ERROR + 1, 'Division by zero');
   Result := A / B;
@@ -87,8 +64,6 @@ end;
 
 function {{:jsonrpc_classname}}.GetServerInfo: TJDOJsonObject;
 begin
-  // Returning a TJDOJsonObject: the framework serializes it into the
-  // JSON-RPC "result" field. The caller receives a structured response.
   Result := TJDOJsonObject.Create;
   Result.S['serverName'] := 'DMVCFramework JSON-RPC Server';
   Result.S['serverTime'] := DateTimeToStr(Now);
@@ -97,29 +72,20 @@ end;
 
 procedure {{:jsonrpc_classname}}.LogMessage(const AMessage: String; const ALevel: String);
 begin
-  // This is a NOTIFICATION: the client sends a request without an "id" field,
-  // and the server does NOT send a response (HTTP 204 No Content).
-  // Use for fire-and-forget operations.
   LogI(Format('[%s] %s', [ALevel, AMessage]));
 end;
-
-// --- JSON-RPC Hooks ---
 
 procedure {{:jsonrpc_classname}}.OnBeforeCallHook(
   const Context: TWebContext; const JSONRequest: TJDOJsonObject);
 begin
-  // Called BEFORE every method invocation.
-  // Use cases: logging, authentication checks, request modification.
-  // To reject a request, raise an exception (e.g. EMVCJSONRPCError).
+  // Raise EMVCJSONRPCError here to reject the call.
   LogI('JSON-RPC call: ' + JSONRequest.S['method']);
 end;
 
 procedure {{:jsonrpc_classname}}.OnAfterCallHook(
   const Context: TWebContext; const JSONResponse: TJDOJsonObject);
 begin
-  // Called AFTER every method invocation (even if the method raised an exception).
-  // JSONResponse can be nil for notifications.
-  // Use cases: logging, metrics, response modification.
+  // JSONResponse is nil for notifications.
   if JSONResponse <> nil then
     LogI('JSON-RPC response ready for request id: ' + JSONResponse.S['id']);
 end;

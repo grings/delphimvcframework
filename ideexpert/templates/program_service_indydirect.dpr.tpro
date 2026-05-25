@@ -45,9 +45,6 @@ uses
 {$R *.RES}
 
 begin
-  // Windows 2003 Server requires StartServiceCtrlDispatcher to be
-  // called before CoRegisterClassObject, which can be called indirectly
-  // by Application.Initialize.
   if not Application.DelayInitialize or Application.Installing then
     Application.Initialize;
   Application.CreateForm(TDMVCFrameworkWindowsService, DMVCFrameworkWindowsService);
