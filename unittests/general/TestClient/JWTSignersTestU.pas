@@ -126,12 +126,34 @@ type
     procedure TestEmptyKeys_RaisesException;
   end;
 
+  // Regression guards for the signature-tamper tests. The original TamperToken
+  // helper overwrote the last two base64url chars with 'XX', which always
+  // decodes to byte $5D. Because the final base64url char of a 256-/64-byte
+  // signature carries only 2 significant bits, whenever a genuine signature
+  // ended in $5D (~1/256, varying per run via the iat/exp claims) the "tamper"
+  // was a no-op: the unchanged valid token verified and *_TamperedTokenRejected
+  // failed intermittently. These tests pin the invariants deterministically.
+  [TestFixture]
+  TTestJWTSignatureTamper = class
+  public
+    // The shared TamperToken helper must ALWAYS change the decoded signature,
+    // for every possible final-byte value. (The old helper was a no-op exactly
+    // when the signature ended in $5D.)
+    [Test]
+    procedure TamperTokenAlwaysAltersDecodedSignature;
+    // Deterministic, non-flaky proof that the RSA verify path rejects a token
+    // whose signature has a single corrupted byte.
+    [Test]
+    procedure RS256SingleByteSignatureCorruptionIsRejected;
+  end;
+
 implementation
 
 uses
   System.SysUtils,
   System.IOUtils,
   System.DateUtils,
+  MVCFramework.Commons,
   MVCFramework.HMAC,
   MVCFramework.JWT.RSA;
 
@@ -195,14 +217,27 @@ end;
 function TamperToken(const AToken: string): string;
 var
   LParts: TArray<string>;
+  LFirst: Char;
 begin
-  // Tamper with the signature part (last segment) to ensure
-  // the header and payload JSON remain valid but verification fails.
+  // Corrupt the signature so header/payload stay valid but verification must
+  // fail. We flip the FIRST base64url char of the signature: it encodes the
+  // top 6 bits of signature byte 0 (a fully-significant position), so any
+  // change always alters the decoded signature.
+  //
+  // NOTE: the previous version overwrote the LAST two chars with 'XX'. For
+  // 256- and 64-byte signatures the final base64url char carries only 2
+  // significant bits (4 are don't-care padding bits), so 'XX' always decoded
+  // the last byte to 0x5D. Whenever the genuine signature's last byte was
+  // already 0x5D (~1/256, and it varies per run via the iat/exp claims) the
+  // "tamper" was a no-op -> the valid token verified -> intermittent failures.
   LParts := AToken.Split(['.']);
-  if Length(LParts) = 3 then
+  if (Length(LParts) = 3) and (LParts[2].Length > 0) then
   begin
-    // Flip a character near the end of the signature
-    LParts[2] := LParts[2].Substring(0, Length(LParts[2]) - 2) + 'XX';
+    LFirst := LParts[2].Chars[0];
+    if LFirst = 'A' then
+      LParts[2] := 'B' + LParts[2].Substring(1)
+    else
+      LParts[2] := 'A' + LParts[2].Substring(1);
     Result := LParts[0] + '.' + LParts[1] + '.' + LParts[2];
   end
   else
@@ -676,6 +711,70 @@ begin
     EMVCJWTSignerException);
 end;
 
+{ TTestJWTSignatureTamper }
+
+function SameBytes(const A, B: TBytes): Boolean;
+var
+  I: Integer;
+begin
+  Result := Length(A) = Length(B);
+  if Result then
+    for I := 0 to High(A) do
+      if A[I] <> B[I] then
+        Exit(False);
+end;
+
+procedure TTestJWTSignatureTamper.TamperTokenAlwaysAltersDecodedSignature;
+var
+  LSig, LOrig, LNew: TBytes;
+  LSeg, LTampered: string;
+  B, I: Integer;
+begin
+  // Sweep every possible final signature byte. URLSafeB64encode/Decode round-trip
+  // the bytes, so LOrig is the genuine signature; after TamperToken the decoded
+  // signature must differ. The old helper produced an identical signature for
+  // B = $5D, which this loop would catch.
+  SetLength(LSig, 256);
+  for B := 0 to 255 do
+  begin
+    for I := 0 to 254 do
+      LSig[I] := Byte(I);
+    LSig[255] := Byte(B);
+    LSeg := URLSafeB64encode(LSig, False);
+    LOrig := URLSafeB64DecodeBytes(LSeg);
+    LTampered := TamperToken('aaaa.bbbb.' + LSeg);
+    LNew := URLSafeB64DecodeBytes(LTampered.Split(['.'])[2]);
+    Assert.IsFalse(SameBytes(LOrig, LNew),
+      Format('TamperToken left the signature unchanged for final byte $%.2x', [B]));
+  end;
+end;
+
+procedure TTestJWTSignatureTamper.RS256SingleByteSignatureCorruptionIsRejected;
+var
+  LSigner: IJWTSigner;
+  LToken, LCorrupted: string;
+  LParts: TArray<string>;
+  LSig: TBytes;
+begin
+  LSigner := TRSAJWTSigner.CreateFromFiles(JWT_RS256,
+    TPath.Combine(GetTestKeysPath, 'rsa/private.pem'),
+    TPath.Combine(GetTestKeysPath, 'rsa/public.pem'));
+  LToken := CreateTestToken(LSigner);
+  Assert.IsTrue(VerifyTestToken(LSigner, LToken),
+    'sanity: a freshly signed token must verify');
+
+  // Deterministically corrupt one signature byte and re-encode. Flipping byte 0
+  // (xor $FF) always changes the signature, so verification must always fail —
+  // unlike a base64-tail edit, this can never be a no-op.
+  LParts := LToken.Split(['.']);
+  LSig := URLSafeB64DecodeBytes(LParts[2]);
+  LSig[0] := LSig[0] xor $FF;
+  LCorrupted := LParts[0] + '.' + LParts[1] + '.' + URLSafeB64encode(LSig, False);
+
+  Assert.IsFalse(VerifyTestToken(LSigner, LCorrupted),
+    'a token with one corrupted signature byte must be rejected');
+end;
+
 initialization
   TDUnitX.RegisterTestFixture(TTestHMACSigners);
   TDUnitX.RegisterTestFixture(TTestRSASigners);
@@ -683,5 +782,6 @@ initialization
   TDUnitX.RegisterTestFixture(TTestECDSASigners);
   TDUnitX.RegisterTestFixture(TTestEdDSASigner);
   TDUnitX.RegisterTestFixture(TTestJWTSignerSecurity);
+  TDUnitX.RegisterTestFixture(TTestJWTSignatureTamper);
 
 end.
