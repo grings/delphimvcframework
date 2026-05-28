@@ -743,7 +743,7 @@ begin
     ssLax: lSameSite := 'Lax';
     ssNone: lSameSite := 'None';
   end;
-  {$IF CompilerVersion >= 34.0}  // Delphi 10.4 Sydney and later
+  {$IF CompilerVersion >= 35.0}  // TCookie.SameSite added in Delphi 11 Alexandria
   lCookie.SameSite := lSameSite;
   {$ENDIF}
 end;
@@ -783,7 +783,7 @@ begin
   lCookie.Expires := Now + (10 * OneMinute);
   lCookie.HttpOnly := True;
   lCookie.Secure := FCookieSecure;
-  {$IF CompilerVersion >= 34.0}
+  {$IF CompilerVersion >= 35.0}  // TCookie.SameSite added in Delphi 11 Alexandria
   lCookie.SameSite := 'Lax';
   {$ENDIF}
 end;
@@ -818,7 +818,7 @@ begin
   lCookie.Expires := EncodeDate(1970, 1, 1);
   lCookie.HttpOnly := True;
   lCookie.Secure := FCookieSecure;
-  {$IF CompilerVersion >= 34.0}
+  {$IF CompilerVersion >= 35.0}  // TCookie.SameSite added in Delphi 11 Alexandria
   lCookie.SameSite := 'Lax';
   {$ENDIF}
 end;

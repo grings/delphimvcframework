@@ -1121,7 +1121,7 @@ begin
     ssLax: lSameSite := 'Lax';
     ssNone: lSameSite := 'None';
   end;
-  {$IF CompilerVersion >= 34.0}  // Delphi 10.4 Sydney and later
+  {$IF CompilerVersion >= 35.0}  // TCookie.SameSite added in Delphi 11 Alexandria
   lCookie.SameSite := lSameSite;
   {$ENDIF}
 end;
