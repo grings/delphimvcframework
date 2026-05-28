@@ -101,7 +101,9 @@ var
   LBytes: TBytes;
 begin
   // Converti "program.dpr.tpro" -> "PROGRAM_DPR"
-  LResName := ChangeFileExt(AName, '').Replace('.', '_').ToUpper;
+  // ToUpperInvariant: resource names are ASCII; locale-aware ToUpper breaks on
+  // Turkish locale (i -> dotted-I), producing a name that fails to resolve.
+  LResName := ChangeFileExt(AName, '').Replace('.', '_').ToUpperInvariant;
   try
     LResStream := TResourceStream.Create(HInstance, LResName, RT_RCDATA);
     try

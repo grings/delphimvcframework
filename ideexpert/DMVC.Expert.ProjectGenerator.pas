@@ -152,7 +152,9 @@ var
 begin
   // Load template from embedded resources only
   // Convert template path to resource name: "views\index.tpro" -> "VIEWS_INDEX"
-  LResName := ChangeFileExt(ATemplateName, '').Replace('.', '_').Replace('\', '_').ToUpper;
+  // ToUpperInvariant: resource names are ASCII; locale-aware ToUpper breaks on
+  // Turkish locale (i -> dotted-I), producing a name that fails to resolve.
+  LResName := ChangeFileExt(ATemplateName, '').Replace('.', '_').Replace('\', '_').ToUpperInvariant;
   try
     LResStream := TResourceStream.Create(HInstance, LResName, RT_RCDATA);
     try
