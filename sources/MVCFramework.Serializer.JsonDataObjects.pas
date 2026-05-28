@@ -1150,9 +1150,12 @@ begin
         JsonBase := TJDOJsonObject.Parse(ASerializedList);
         if not(JsonBase is TJDOJsonObject) then
         begin
-          JsonBase.Free;
-          raise EMVCSerializationException.CreateFmt('Invalid JSON. Expected %s got %s',
-            [TJDOJsonObject.ClassName, JsonBase.ClassName]);
+          try
+            raise EMVCSerializationException.CreateFmt('Invalid JSON. Expected %s got %s',
+              [TJDOJsonObject.ClassName, JsonBase.ClassName]);
+          finally
+            JsonBase.Free;
+          end;
         end;
         JSONObject := TJDOJsonObject(JsonBase);
       except
