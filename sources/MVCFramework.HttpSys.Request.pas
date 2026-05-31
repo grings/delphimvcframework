@@ -590,10 +590,34 @@ var
   lPair: string;
   lEqPos: Integer;
   lName, lValue: string;
+  I: Integer;
 begin
   lResult := TList<string>.Create;
   try
-    if FContentTypeStr.StartsWith(TMVCMediaType.APPLICATION_FORM_URLENCODED, True) then
+    if FContentTypeStr.ToLower.Contains('multipart/form-data') then
+    begin
+      // Multipart: ParseMultipartContent preserves duplicate field names in
+      // FCachedContentFieldsText (one "name=value" line per occurrence), the
+      // only source that keeps multi-value text parts. The urlencoded branch
+      // below cannot see these (the body is not '&'-delimited).
+      ParseMultipartContent;
+      if Assigned(FCachedContentFieldsText) then
+      begin
+        for I := 0 to FCachedContentFieldsText.Count - 1 do
+        begin
+          lPair := FCachedContentFieldsText[I];
+          lEqPos := Pos('=', lPair);
+          if lEqPos > 0 then
+          begin
+            lName := Copy(lPair, 1, lEqPos - 1);
+            lValue := Copy(lPair, lEqPos + 1, MaxInt);
+            if SameText(lName, AParamName) then
+              lResult.Add(lValue);
+          end;
+        end;
+      end;
+    end
+    else if FContentTypeStr.StartsWith(TMVCMediaType.APPLICATION_FORM_URLENCODED, True) then
     begin
       if Length(FBodyBytes) > 0 then
       begin
