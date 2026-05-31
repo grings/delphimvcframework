@@ -293,6 +293,8 @@ resourcestring
   SOIDCCallbackError = 'OIDC: Callback processing error - %s';
   SOIDCCallbackNonceMismatch = 'OIDC: Nonce mismatch in ID token (expected=%s, got=%s)';
   SOIDCIDTokenMissingExp = 'OIDC: ID token is missing the required exp claim';
+  SOIDCIDTokenNotYetValid = 'OIDC: ID token is not yet valid (nbf is in the future)';
+  SOIDCIDTokenIssuedInFuture = 'OIDC: ID token was issued in the future (iat beyond allowed clock skew)';
   SOIDCUserLoggedIn = 'OIDC: User authenticated and session created';
   SOIDCUserLoggedOut = 'OIDC: User session cleared';
 
@@ -568,6 +570,7 @@ var
   lClaims: TJsonObject;
   lIssuer: string;
   lExp: Int64;
+  lNbf, lIat: Int64;
   lAudValue: string;
   lAudArray: TJsonArray;
   lAudFound: Boolean;
@@ -621,6 +624,21 @@ begin
     if UnixToDateTime(lExp, False) + (FLeewaySeconds * OneSecond) <= Now then
       raise EMVCException.Create(SOIDCIDTokenExpired);
 
+    // Validate not-before / issued-at when present (same leeway as exp). Both
+    // are optional on an OIDC ID token, so absent claims are simply skipped.
+    if lClaims.Contains('nbf') then
+    begin
+      lNbf := lClaims.L['nbf'];
+      if UnixToDateTime(lNbf, False) - (FLeewaySeconds * OneSecond) > Now then
+        raise EMVCException.Create(SOIDCIDTokenNotYetValid);
+    end;
+    if lClaims.Contains('iat') then
+    begin
+      lIat := lClaims.L['iat'];
+      if UnixToDateTime(lIat, False) - (FLeewaySeconds * OneSecond) > Now then
+        raise EMVCException.Create(SOIDCIDTokenIssuedInFuture);
+    end;
+
     // ID token signature verification
     if Assigned(FJWKSProvider) then
     begin
@@ -638,8 +656,10 @@ begin
     end
     else
       // No JWKS provider configured - rely on TLS trust to the token endpoint.
-      // The token was received directly from the provider over HTTPS, not via the browser.
-      LogD(SOIDCIDTokenNoSigVerify);
+      // The token was received directly from the provider over HTTPS, not via the
+      // browser. Warn (not debug): cryptographic verification is OFF — configure a
+      // JWKS provider via SetJWKSProvider to verify the ID token signature.
+      LogW(SOIDCIDTokenNoSigVerify);
 
     Result := lClaims;
     lClaims := nil; // prevent freeing, caller owns the result

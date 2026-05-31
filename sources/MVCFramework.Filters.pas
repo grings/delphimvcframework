@@ -705,6 +705,15 @@ begin
       if IsLibrary then
         Exit;
 
+      // Respect an encoding already chosen downstream. RangeMedia stamps
+      // 'Content-Encoding: identity' on partial responses precisely so we do not
+      // re-encode and corrupt Content-Range. Re-compressing would also emit
+      // contradictory encoding headers. Skip if any Content-Encoding is already
+      // set, via either the typed property or a custom header.
+      if (AContext.Response.ContentEncoding <> '') or
+         (AContext.Response.GetCustomHeader('Content-Encoding') <> '') then
+        Exit;
+
       lContentStream := AContext.Response.ContentStream;
       if (lContentStream = nil) or (lContentStream.Size <= ACompressionThreshold) then
         Exit;
@@ -1136,8 +1145,11 @@ begin
     if Assigned(AClaimsSetup) then
       AClaimsSetup(lJWT);
     // Custom claims: roles + session data set by the auth handler.
-    for lKey in ARolesList do
-      lJWT.CustomClaims.Items['roles'] := lKey;
+    // All roles go into ONE comma-joined 'roles' claim (the framework's standard
+    // shape, read back via Split(',')). The previous per-iteration assignment
+    // overwrote the claim each loop and kept only the last role.
+    if ARolesList.Count > 0 then
+      lJWT.CustomClaims.Items['roles'] := string.Join(',', ARolesList.ToArray);
     if Assigned(ASessionData) then
       for lKey in ASessionData.Keys do
         lJWT.CustomClaims.Items[lKey] := ASessionData[lKey];
@@ -1316,7 +1328,11 @@ begin
         Exit(ANext());
 
       // Pull cached creds from session if available — mirrors classic line 209.
-      AContext.LoggedUser.LoadFromSession(AContext.Session);
+      // Guard: minimal-API may have no session filter in the chain; touching the
+      // session then raises EMVCConfigException. Without a session we just skip
+      // the cache — creds are re-read from the Authorization header each request.
+      if AContext.HasSessionSupport then
+        AContext.LoggedUser.LoadFromSession(AContext.Session);
       lIsValid := AContext.LoggedUser.IsValid;
       if not lIsValid then
       begin
@@ -1336,9 +1352,13 @@ begin
               AContext.LoggedUser.UserName := lUserName;
               AContext.LoggedUser.LoggedSince := Now;
               AContext.LoggedUser.Realm := ARealm;
-              AContext.LoggedUser.SaveToSession(AContext.Session);
-              for lPair in lSession do
-                AContext.Session[lPair.Key] := lPair.Value;
+              // Only persist to the session when one is configured (see guard above).
+              if AContext.HasSessionSupport then
+              begin
+                AContext.LoggedUser.SaveToSession(AContext.Session);
+                for lPair in lSession do
+                  AContext.Session[lPair.Key] := lPair.Value;
+              end;
             end;
           finally
             lSession.Free;

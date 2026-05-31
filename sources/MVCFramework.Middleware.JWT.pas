@@ -474,6 +474,11 @@ begin
   FSetupJWTClaims := AConfigClaims;
   FClaimsToChecks := AClaimsToCheck;
   FSecret := ASecret;
+  // Insecure default: the well-known shipped secret signs/verifies tokens with a
+  // publicly-known key, allowing token forgery. Warn loudly when it is left in
+  // place. (Removing the default outright is an API break, deferred to v4.)
+  if ASecret = 'D3lph1MVCFram3w0rk' then
+    LogW('JWT middleware is using the built-in default secret. Set a strong, unique secret in production: tokens signed with the shipped default can be forged.');
   FLoginURLSegment := ALoginURLSegment;
   FLeewaySeconds := ALeewaySeconds;
   FAuthorizationHeaderName := TMVCJWTDefaults.AUTHORIZATION_HEADER;
@@ -553,8 +558,10 @@ begin
     lCookie.Name := 'token';
     lCookie.Value := AJSONOb.S['token'];
     lCookie.HttpOnly := True;
-    // Cookie.Secure := True;
-    // Cookie.SameSite := 'none';
+    lCookie.Secure := True;
+    {$IF CompilerVersion >= 35.0}  // TCookie.SameSite added in Delphi 11 Alexandria
+    lCookie.SameSite := 'Strict';
+    {$ENDIF}
   end;
 
   lContentType := BuildContentType(AMediaType, AContentCharset);
@@ -584,6 +591,11 @@ begin
   Cookie := AContext.Response.Cookies.Add;
   Cookie.Name := 'token';
   Cookie.Path := '/';
+  Cookie.HttpOnly := True;
+  Cookie.Secure := True;
+  {$IF CompilerVersion >= 35.0}  // TCookie.SameSite added in Delphi 11 Alexandria
+  Cookie.SameSite := 'Strict';
+  {$ENDIF}
 
   Encoding := TEncoding.GetEncoding(AContentEncoding);
   try

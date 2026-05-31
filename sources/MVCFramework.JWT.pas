@@ -752,8 +752,8 @@ begin
         begin
           if not CheckExpirationTime(Payload, Error) then
           begin
-            Exit(False);
             Error := Error + ' (step6)';
+            Exit(False);
           end;
 
         end;
@@ -762,8 +762,8 @@ begin
         begin
           if not CheckNotBefore(Payload, Error) then
           begin
-            Exit(False);
             Error := Error + ' (step7)';
+            Exit(False);
           end;
         end;
 
@@ -771,8 +771,8 @@ begin
         begin
           if not CheckIssuedAt(Payload, Error) then
           begin
-            Exit(False);
             Error := Error + ' (step8)';
+            Exit(False);
           end;
         end;
 

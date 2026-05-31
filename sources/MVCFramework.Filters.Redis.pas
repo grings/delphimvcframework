@@ -186,6 +186,10 @@ begin
 
         if lCount > AMaxRequests then
         begin
+          // Never advertise Retry-After: 0 — that tells the client to retry
+          // immediately, contradicting the 429. Clamp to at least 1 second.
+          if lTTL < 1 then
+            lTTL := 1;
           AContext.Response.SetCustomHeader('Retry-After', IntToStr(lTTL));
           AContext.Response.StatusCode := 429;
           lExceeded := True;

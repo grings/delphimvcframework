@@ -621,6 +621,10 @@ type
     function SessionId: string;
     function IsSessionStarted: Boolean;
     function SessionMustBeClose: Boolean;
+    { True when a session factory is configured (a session middleware/filter is
+      in the chain). Lets callers probe for session support without triggering
+      the EMVCConfigException that GetWebSession/Session raise when none is set. }
+    function HasSessionSupport: Boolean;
 
     property HostingFrameworkType: TMVCHostingFrameworkType read GetHostingFrameworkType;
     property LoggedUser: TMVCUser read GetLoggedUser;
@@ -2118,6 +2122,11 @@ begin
     raise EMVCConfigException.Create('Session middleware has not been set - session cannot be used without a proper session middleware');
   end;
   Result := fSessionFactory;
+end;
+
+function TWebContext.HasSessionSupport: Boolean;
+begin
+  Result := fSessionFactory <> nil;
 end;
 
 constructor TWebContext.Create(const AServiceContainerResolver: IMVCServiceContainerResolver; const ARequest: TWebRequest; const AResponse: TWebResponse;
@@ -3844,9 +3853,11 @@ begin
       else
         lMsg := '';
 
-      // Not a browser request, or no error view exists: leave Handled=False so
-      // the framework's own default error rendering runs unchanged.
-      if not (WebContext.Request.ClientPreferHTML
+      // Browser detection for the HTML error page: require an explicit text/html
+      // in Accept. A bare wildcard (Accept: */*, the curl / HTTP-library default)
+      // is NOT treated as an HTML preference, so API clients keep the framework's
+      // default RFC 7807 problem+json rendering unchanged.
+      if not ((AnsiPos('text/html', LowerCase(WebContext.Request.Accept)) > 0)
               and ErrorViewExists(WebContext, AErrorViewName)) then
         Exit;
 
@@ -3861,11 +3872,17 @@ begin
       lView := nil;
       lSB := nil;
       try
-        lView := ViewEngineClass.Create(Self, WebContext, nil, WebContext.ViewData,
-          TMVCMediaType.TEXT_HTML);
-        lSB := TStringBuilder.Create;
         try
+          // Creating the view engine can itself raise (e.g. no view engine
+          // configured, or a custom engine constructor that throws). Keep it
+          // inside the protected region so any failure degrades to the framework
+          // default render instead of escaping the exception handler.
+          lView := ViewEngineClass.Create(Self, WebContext, nil, WebContext.ViewData,
+            TMVCMediaType.TEXT_HTML);
+          lSB := TStringBuilder.Create;
           lView.Execute(AErrorViewName, lSB);
+          // Response content is assigned only after a successful Execute, so the
+          // Response is untouched if anything above raised.
           WebContext.Response.StatusCode := lStatus;
           WebContext.Response.ReasonString := lReason;
           WebContext.Response.ContentType := TMVCMediaType.TEXT_HTML;
@@ -3874,9 +3891,8 @@ begin
         except
           on Ex: Exception do
           begin
-            // HTML render threw; Response was NOT touched yet (Execute writes
-            // into lSB and Response is assigned only after).  Leave
-            // Handled=False so the framework default renders instead.
+            // Setup/render threw; leave Handled=False so the framework default
+            // error rendering runs instead.
             LogE(Format('UseExceptionHandler render failed: %s', [Ex.Message]));
             Handled := False;
           end;

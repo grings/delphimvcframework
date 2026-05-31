@@ -1143,6 +1143,8 @@ begin
     if ARootNode.IsEmpty then
     begin
       JSONArray := TJDOJsonArray.Parse(ASerializedList) as TJDOJsonArray;
+      // Standalone array: it is the owned root; free it via JsonBase below.
+      JsonBase := JSONArray;
     end
     else
     begin
@@ -1164,13 +1166,18 @@ begin
           raise EMVCException.Create(HTTP_STATUS.BadRequest, E.Message);
         end;
       end;
+      // A[ARootNode] returns a CHILD array OWNED by JSONObject (=JsonBase):
+      // it must NOT be freed on its own. Free only the owning root (JsonBase).
       JSONArray := JSONObject.A[ARootNode] as TJDOJsonArray;
     end;
     try
       GetTypeSerializers.Items[AList.ClassInfo].DeserializeRoot(JSONArray, AList, []);
       Exit;
     finally
-      JSONArray.Free;
+      // Frees the owned root in both cases (standalone array, or the parsed
+      // object whose child array is released transitively) — fixes the prior
+      // leak of the root and the latent double-free of the borrowed child.
+      JsonBase.Free;
     end;
   end;
 
@@ -2775,7 +2782,13 @@ begin
           {$ENDIF}
 
           LFieldName := LRttiProperty.Name;
-          LQualifiedFieldName := Format('%s.%s', [AObject.ClassName, LRttiProperty.Name]);
+          // Build the qualified "Class.Field" name only when an ignore-list is
+          // present; otherwise it is a per-property heap allocation discarded on
+          // the hot path (IsIgnoredAttribute short-circuits to False for [] ).
+          if Length(AIgnoredAttributes) > 0 then
+            LQualifiedFieldName := AObject.ClassName + '.' + LFieldName
+          else
+            LQualifiedFieldName := '';
           if (not TMVCSerializerHelper.HasAttribute<MVCDoNotSerializeAttribute>(LRttiProperty)) and
              (not IsIgnoredAttribute(AIgnoredAttributes, LFieldName)) and
              (not IsIgnoredAttribute(AIgnoredAttributes, LQualifiedFieldName))
@@ -2795,7 +2808,11 @@ begin
         for LRttiField in LRttiType.GetFields do
         begin
           LFieldName := LRttiField.Name;
-          LQualifiedFieldName := Format('%s.%s', [AObject.ClassName, LRttiField.Name]);
+          // See note above: skip the qualified-name allocation when no ignore-list.
+          if Length(AIgnoredAttributes) > 0 then
+            LQualifiedFieldName := AObject.ClassName + '.' + LFieldName
+          else
+            LQualifiedFieldName := '';
           if (not TMVCSerializerHelper.HasAttribute<MVCDoNotSerializeAttribute>(LRttiField)) and
              (not IsIgnoredAttribute(AIgnoredAttributes, LFieldName)) and
              (not IsIgnoredAttribute(AIgnoredAttributes, LQualifiedFieldName))
