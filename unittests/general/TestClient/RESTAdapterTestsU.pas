@@ -67,6 +67,13 @@ type
     [RESTResource(httpPOST, '/people')]
     function SendPerson([Body] ABody: TPerson): TPerson;
 
+    // Issue #897: single-object request body + collection response body.
+    // The method-level [MVCListOf] describes the response array and must not
+    // make the adapter serialize the [Body] object as a collection.
+    [RESTResource(httpPOST, '/people/searchbysample')]
+    [MVCListOf(TPerson)]
+    function SearchPeopleBySample([Body] ACriteria: TPerson): TObjectList<TPerson>;
+
     [RESTResource(HttpGet, '/people')]
     function GetPersonInJSONArray: TJSONArray;
 
@@ -105,6 +112,8 @@ type
     procedure TestGetTonyStarkAsynch;
     [Test]
     procedure TestPostPerson;
+    [Test]
+    procedure TestSearchPeopleBySample_ObjectBodyArrayResult;
     [Test]
     procedure TestGetPersonByID;
     [Test]
@@ -241,6 +250,26 @@ begin
     Assert.IsFalse(RetPerson.Married);
   finally
     RetPerson.Free;
+  end;
+end;
+
+procedure TTestRESTAdapter.TestSearchPeopleBySample_ObjectBodyArrayResult;
+var
+  lCriteria: TPerson;
+  lResult: TObjectList<TPerson>;
+begin
+  // Issue #897: a single-object [Body] combined with a method-level [MVCListOf]
+  // (which describes the array RESPONSE) must NOT serialize the request body as
+  // a collection. Pre-fix the server received a JSON array and BodyAs<TPerson>
+  // could not bind it. The adapter owns and frees lCriteria ([Body] default).
+  lCriteria := TPerson.GetNew('Search', 'Criteria', 0, False);
+  lResult := TESTService.SearchPeopleBySample(lCriteria);
+  try
+    Assert.AreEqual<Integer>(1, lResult.Count, 'object body was not received as a single object');
+    Assert.AreEqual('Search', lResult[0].FirstName);
+    Assert.AreEqual('Criteria', lResult[0].LastName);
+  finally
+    lResult.Free;
   end;
 end;
 

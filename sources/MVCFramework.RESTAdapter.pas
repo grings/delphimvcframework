@@ -301,8 +301,16 @@ begin
       try
         if lArg.IsObject then
         begin
-
-          if TRttiUtils.HasAttribute<MVCListOfAttribute>(aMethod, lAttrListOf) then
+          // Decide collection-vs-object from the BODY PARAMETER, not the method.
+          // The method-level [MVCListOf] describes the RESPONSE shape (consumed by
+          // MapResult) and must not force the request body to serialize as a
+          // collection when the body is a single object (issue #897). A body is
+          // serialized as a collection only when it is explicitly marked with
+          // [MVCListOf] on the parameter, or when the argument is in fact a list
+          // (duck-typed) — the latter preserves the historical behavior for
+          // collection bodies that used to rely on the method attribute.
+          if TRttiUtils.HasAttribute<MVCListOfAttribute>(lParameter, lAttrListOf)
+            or TDuckTypedList.CanBeWrappedAsList(lArg.AsObject) then
             Exit(
               GetDefaultSerializer.SerializeCollection(lArg.AsObject)
             { Mapper.ObjectListToJSONArrayString(WrapAsList(lArg.AsObject), True) }

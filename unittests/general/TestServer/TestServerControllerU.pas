@@ -179,6 +179,11 @@ type
     [MVCHTTPMethod([httpGET, httpPOST, httpPUT])]
     procedure TestGetPersons;
 
+    // Issue #897: single-object request body, collection response body.
+    [MVCPath('/people/searchbysample')]
+    [MVCHTTPMethod([httpPOST])]
+    procedure TestSearchPeopleBySample;
+
     [MVCPath('/wrappedpeople')]
     [MVCHTTPMethod([httpGET])]
     procedure TestGetWrappedPeople;
@@ -1098,6 +1103,26 @@ begin
       ;
   end;
 
+end;
+
+procedure TTestServerController.TestSearchPeopleBySample;
+var
+  lCriteria: TPerson;
+  lList: TObjectList<TPerson>;
+begin
+  // Issue #897: the request body is a single object (a search "sample"), the
+  // response is a JSON array. If the RESTAdapter wrongly serialized the body as
+  // a collection (because the method carries [MVCListOf] describing the
+  // response), BodyAs<TPerson> below would fail to bind the object. We echo the
+  // received criteria back inside a one-element list to prove the round-trip.
+  lCriteria := Context.Request.BodyAs<TPerson>();
+  try
+    lList := TObjectList<TPerson>.Create(True);
+    lList.Add(TPerson.GetNew(lCriteria.FirstName, lCriteria.LastName, 0, False));
+    Render<TPerson>(lList, True);
+  finally
+    lCriteria.Free;
+  end;
 end;
 
 procedure TTestServerController.TestGetPersonsHateos;
