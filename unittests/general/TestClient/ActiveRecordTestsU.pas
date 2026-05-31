@@ -236,6 +236,12 @@ type
     // SELECT (GetByPK). Unlike SQLite, PG maps BIGINT to ftLargeInt end-to-end.
     [Test]
     procedure TestInt64AutogenPKBeyondMaxInt32;
+    // Serves a real (PostgreSQL) dataset through the server's streaming writer:
+    // forward-only cursor on the server + TMVCJSONArrayWriter, so neither the
+    // whole dataset nor the whole JSON is buffered. Uses PostgreSQL (not SQLite)
+    // so a strict type system can't mask serialization issues.
+    [Test]
+    procedure TestStreamedDataSet_NotBufferedEndToEnd;
   end;
 
 implementation
@@ -245,7 +251,9 @@ uses
   System.SysUtils, System.Threading, System.Generics.Collections, Data.DB,
   System.DateUtils, System.SyncObjs,
   FireDAC.Stan.Intf, ShellAPI, Winapi.Windows, MVCFramework.Logger,
-  MVCFramework.Nullables, MVCFramework.Validation;
+  MVCFramework.Nullables, MVCFramework.Validation,
+  MVCFramework.RESTClient, MVCFramework.RESTClient.Intf, JsonDataObjects,
+  TestConstsU;
 
 type
   // Dedicated entity for the Int64-autogen-PK regression test. Its table is
@@ -2967,6 +2975,57 @@ begin
     end;
   finally
     ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE IF EXISTS bigint_pk_test');
+  end;
+end;
+
+procedure TTestActiveRecordPostgreSQL.TestStreamedDataSet_NotBufferedEndToEnd;
+const
+  ROW_COUNT = 5000;
+var
+  lRESTClient: IMVCRESTClient;
+  lResp: IMVCRESTResponse;
+  lBase: TJsonBaseObject;
+  lArr: TJsonArray;
+  lStreamed: Boolean;
+begin
+  // Seed a real PostgreSQL table the server streams back. generate_series keeps
+  // seeding a single fast statement even for thousands of rows.
+  ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE IF EXISTS streamed_people');
+  ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL(
+    'CREATE TABLE streamed_people (id INTEGER PRIMARY KEY, first_name VARCHAR(50), last_name VARCHAR(50))');
+  ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL(
+    'INSERT INTO streamed_people (id, first_name, last_name) ' +
+    'SELECT g, ''First'' || g, ''Last'' || g FROM generate_series(1, ' + IntToStr(ROW_COUNT) + ') g');
+  try
+    lRESTClient := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
+    lResp := lRESTClient.Get('/streameddataset');
+    Assert.AreEqual<Integer>(200, lResp.StatusCode);
+
+    // On an Indy-based backend the dataset is streamed through TMVCJSONArrayWriter;
+    // on HTTP.sys the server falls back to a buffered render and flags it.
+    lStreamed := lResp.HeaderValue('X-DMVC-Streaming') <> 'fallback';
+    if lStreamed then
+      // The streaming writer can't know the body size up front, so it emits no
+      // Content-Length (it ends the body by closing the connection). A present
+      // Content-Length would mean the whole JSON had been buffered to measure it.
+      Assert.AreEqual('', lResp.HeaderValue('Content-Length'),
+        'a streamed response must not carry a Content-Length header');
+
+    lBase := TJsonBaseObject.Parse(lResp.Content);
+    try
+      Assert.IsTrue(lBase is TJsonArray, 'streamed response is not a JSON array');
+      lArr := TJsonArray(lBase);
+      Assert.AreEqual<Integer>(ROW_COUNT, lArr.Count, 'streamed array element count mismatch');
+      // Spot-check first and last elements survived the streaming round-trip intact.
+      Assert.AreEqual<Integer>(1, lArr.O[0].I['id']);
+      Assert.AreEqual('First1', lArr.O[0].S['first_name']);
+      Assert.AreEqual<Integer>(ROW_COUNT, lArr.O[ROW_COUNT - 1].I['id']);
+      Assert.AreEqual('Last' + IntToStr(ROW_COUNT), lArr.O[ROW_COUNT - 1].S['last_name']);
+    finally
+      lBase.Free;
+    end;
+  finally
+    ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE IF EXISTS streamed_people');
   end;
 end;
 

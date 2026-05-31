@@ -6,6 +6,7 @@ uses
   System.SysUtils,
   System.IOUtils,
   FireDAC.Stan.StorageJSON,
+  FireDAC.Phys.PG,
   MVCFramework.Logger,
   MVCFramework.Commons,
   {$IFNDEF LINUX}

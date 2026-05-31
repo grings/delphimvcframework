@@ -11,6 +11,7 @@ uses
   Winapi.Windows,
   {$ENDIF }
   Web.WebBroker,
+  FireDAC.Phys.PG,
   MVCFramework.Commons,
   MVCFramework.Console,
   WebModuleUnit in 'WebModuleUnit.pas' {MainWebModule: TWebModule},

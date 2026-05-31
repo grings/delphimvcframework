@@ -184,6 +184,15 @@ type
     [MVCHTTPMethod([httpPOST])]
     procedure TestSearchPeopleBySample;
 
+    // Streamed dataset: a forward-only (fmOnDemand + Unidirectional) PostgreSQL
+    // cursor emitted to the client through TMVCJSONArrayWriter, so neither the
+    // whole dataset nor the whole JSON is materialized on the server. Reads the
+    // streamed_people table seeded by the client-side PostgreSQL fixture.
+    [MVCPath('/streameddataset')]
+    [MVCHTTPMethod([httpGET])]
+    [MVCProduces('application/json')]
+    procedure TestStreamedDataSet;
+
     [MVCPath('/wrappedpeople')]
     [MVCHTTPMethod([httpGET])]
     procedure TestGetWrappedPeople;
@@ -663,6 +672,9 @@ uses
   Generics.Collections,
   MVCFramework.Serializer.Defaults,
   MVCFramework.DuckTyping,
+  MVCFramework.SSE.Writer,
+  FireDAC.Stan.Option,
+  Winapi.Windows,
   System.IOUtils, MVCFramework.Tests.Serializer.Entities, System.DateUtils;
 
 { TTestServerController }
@@ -1103,6 +1115,109 @@ begin
       ;
   end;
 
+end;
+
+const
+  STREAM_PG_CONN_DEF = 'STREAM_PG_CONN';
+
+// Registers a FireDAC PostgreSQL connection def pointing at the embedded PG
+// started by the client-side fixture (localhost:5555 / activerecordtest, trust
+// auth, no password). Called once from the unit initialization (single-threaded
+// startup, before any request is served) so the request path stays lock-free —
+// no global lock on the hot path. VendorLib is pinned to an in-repo libpq
+// matching the server's bitness, and SetDllDirectory makes libpq's own dependent
+// DLLs resolvable from that folder.
+procedure RegisterStreamPGConnDef;
+var
+  lParams: TStringList;
+  lLibPqDir: string;
+  lExeDir: string;
+begin
+  lExeDir := TPath.GetDirectoryName(ParamStr(0));
+{$IFDEF WIN32}
+  lLibPqDir := TPath.GetFullPath(TPath.Combine(lExeDir,
+    '..\..\..\..\samples\activerecord_showcase\bin32'));
+{$ELSE}
+  lLibPqDir := TPath.GetFullPath(TPath.Combine(lExeDir,
+    '..\..\TestClient\pgsql\bin'));
+{$ENDIF}
+  SetDllDirectory(PChar(lLibPqDir));
+
+  lParams := TStringList.Create;
+  try
+    lParams.Add('DriverID=PG');
+    lParams.Add('Database=activerecordtest');
+    lParams.Add('Server=localhost');
+    lParams.Add('Port=5555');
+    lParams.Add('GUIDEndian=Big');
+    lParams.Add('VendorLib=' + TPath.Combine(lLibPqDir, 'libpq.dll'));
+    lParams.Add('Pooled=False');
+    FDManager.AddConnectionDef(STREAM_PG_CONN_DEF, 'PG', lParams);
+  finally
+    lParams.Free;
+  end;
+end;
+
+procedure TTestServerController.TestStreamedDataSet;
+var
+  lConn: TFDConnection;
+  lQry: TFDQuery;
+  lWriter: TMVCJSONArrayWriter;
+  lStreamingOK: Boolean;
+begin
+  lConn := TFDConnection.Create(nil);
+  try
+    lConn.ConnectionDefName := STREAM_PG_CONN_DEF;
+    lConn.Open;
+
+    lQry := TFDQuery.Create(nil);
+    try
+      lQry.Connection := lConn;
+      // Forward-only streaming cursor: rows are fetched on demand as Next is
+      // called, so the full result is never materialized server-side.
+      lQry.FetchOptions.Mode := TFDFetchMode.fmOnDemand;
+      lQry.FetchOptions.Unidirectional := True;
+      lQry.UpdateOptions.ReadOnly := True;
+      lQry.UpdateOptions.RequestLive := False;
+      lQry.Open('SELECT id, first_name, last_name FROM streamed_people ORDER BY id');
+
+      lWriter := nil;
+      lStreamingOK := True;
+      try
+        lWriter := TMVCJSONArrayWriter.Create(Context);
+      except
+        on EMVCException do
+          // Backend without an Indy IOHandler (HTTP.sys): the streaming writer
+          // cannot take over the socket. Fall back to a normal buffered array
+          // render so the endpoint still returns valid data on that backend.
+          lStreamingOK := False;
+      end;
+
+      if lStreamingOK then
+      begin
+        try
+          while not lQry.Eof do
+          begin
+            if not lWriter.Connected then
+              Break;
+            lWriter.Send(Serializer.SerializeDataSetRecord(lQry));
+            lQry.Next;
+          end;
+        finally
+          lWriter.Free; // emits the closing "]" and closes the socket
+        end;
+      end
+      else
+      begin
+        Context.Response.SetCustomHeader('X-DMVC-Streaming', 'fallback');
+        Render(lQry, False);
+      end;
+    finally
+      lQry.Free;
+    end;
+  finally
+    lConn.Free;
+  end;
 end;
 
 procedure TTestServerController.TestSearchPeopleBySample;
@@ -1846,5 +1961,11 @@ begin
     lParts.Free;
   end;
 end;
+
+initialization
+
+// One-time, single-threaded registration at startup keeps the streaming
+// request path lock-free (no global lock acting as a server bottleneck).
+RegisterStreamPGConnDef;
 
 end.
