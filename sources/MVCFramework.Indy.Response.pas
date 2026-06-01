@@ -333,7 +333,13 @@ begin
   FResponseInfo.ResponseNo := 200;
   FResponseInfo.ContentType := AContentType + '; charset=' + ACharset;
   FResponseInfo.CloseConnection := False;
-  FResponseInfo.CustomHeaders.Values['Transfer-Encoding'] := 'chunked';
+  // Set the dedicated TransferEncoding property (NOT a CustomHeaders entry):
+  // TIdHTTPResponseInfo.WriteHeader only honors ContentLength = -1 (i.e. omits
+  // Content-Length) when this property is 'chunked'/non-identity. With it unset,
+  // Indy sees an empty body, synthesizes a default HTML error page and emits its
+  // byte count as Content-Length. Setting the property both suppresses that and
+  // makes Indy emit the Transfer-Encoding: chunked header itself (no duplicate).
+  FResponseInfo.TransferEncoding := 'chunked';
   FResponseInfo.CustomHeaders.Values['Cache-Control'] := 'no-cache';
   FResponseInfo.ContentLength := -1; // suppress automatic Content-Length
   if not FConnected then Exit;
