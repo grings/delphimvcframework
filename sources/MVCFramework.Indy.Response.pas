@@ -31,7 +31,7 @@ interface
 uses
   System.Classes, System.SysUtils,
   Web.HTTPApp,
-  IdCustomHTTPServer, IdContext, IdCookie, IdIOHandler,
+  IdCustomHTTPServer, IdContext, IdCookie, IdIOHandler, IdGlobal,
   MVCFramework;
 
 type
@@ -43,6 +43,7 @@ type
     FCustomHeaders: TStringList;
     FHeadersSent: Boolean;
     FSingleFlushResponse: Boolean;
+    FChunkedStreaming: Boolean;
   protected
     function GetCustomHeaders: TStrings; override;
     function GetReasonString: string; override;
@@ -74,6 +75,7 @@ type
     function GetCustomHeader(const AName: string): string; override;
     procedure SendRedirect(const AUrl: string); override;
     procedure SendResponse; override;
+    function CreateChunkedWriter: IMVCChunkedResponseWriter; override;
   end;
 
 implementation
@@ -93,6 +95,7 @@ begin
   FCookies := TCookieCollection.Create(TWebResponse(nil), TCookie);
   FCustomHeaders := TStringList.Create;
   FHeadersSent := False;
+  FChunkedStreaming := False;
   FSingleFlushResponse := ASingleFlushResponse;
 end;
 
@@ -210,7 +213,9 @@ begin
   if StreamingHandled then
   begin
     FHeadersSent := True;
-    FResponseInfo.CloseConnection := True;
+    // close-based writers (SSE/JSONL/JSONArray) need EOF via close; the
+    // chunked writer terminates with 0-chunk and keeps the connection alive.
+    FResponseInfo.CloseConnection := not FChunkedStreaming;
     Exit;
   end;
   FHeadersSent := True;
@@ -281,6 +286,97 @@ end;
 function TMVCIndyDirectResponse.GetCustomHeader(const AName: string): string;
 begin
   Result := FCustomHeaders.Values[AName];
+end;
+
+type
+  TMVCIndyChunkedWriter = class(TInterfacedObject, IMVCChunkedResponseWriter)
+  private
+    FResponseInfo: TIdHTTPResponseInfo;
+    FIO: TIdIOHandler;
+    FEnc: IIdTextEncoding;
+    FConnected: Boolean;
+    procedure RawWrite(const AText: string);
+  public
+    constructor Create(const AResponseInfo: TIdHTTPResponseInfo; const AIO: TIdIOHandler);
+    procedure SendHeaders(const AContentType, ACharset: string);
+    procedure WriteChunk(const ABytes: TBytes);
+    procedure Finish;
+    function Connected: Boolean;
+  end;
+
+constructor TMVCIndyChunkedWriter.Create(const AResponseInfo: TIdHTTPResponseInfo;
+  const AIO: TIdIOHandler);
+begin
+  inherited Create;
+  FResponseInfo := AResponseInfo;
+  FIO := AIO;
+  FEnc := IndyTextEncoding_UTF8;
+  FConnected := True;
+end;
+
+procedure TMVCIndyChunkedWriter.RawWrite(const AText: string);
+begin
+  if not FConnected then
+    Exit;
+  try
+    FIO.Write(AText, FEnc);
+  except
+    FConnected := False;
+  end;
+end;
+
+procedure TMVCIndyChunkedWriter.SendHeaders(const AContentType, ACharset: string);
+begin
+  // Let Indy emit a correct, keep-alive header; we add chunked ourselves and
+  // suppress Content-Length. After WriteHeader, Indy marks the header written
+  // and will NOT append its own body/header for this request.
+  FResponseInfo.ResponseNo := 200;
+  FResponseInfo.ContentType := AContentType + '; charset=' + ACharset;
+  FResponseInfo.CloseConnection := False;
+  FResponseInfo.CustomHeaders.Values['Transfer-Encoding'] := 'chunked';
+  FResponseInfo.CustomHeaders.Values['Cache-Control'] := 'no-cache';
+  FResponseInfo.ContentLength := -1; // suppress automatic Content-Length
+  if not FConnected then Exit;
+  try
+    FResponseInfo.WriteHeader;
+  except
+    FConnected := False;
+  end;
+end;
+
+procedure TMVCIndyChunkedWriter.WriteChunk(const ABytes: TBytes);
+var
+  lIdBytes: TIdBytes;
+begin
+  if (not FConnected) or (Length(ABytes) = 0) then
+    Exit;
+  try
+    // <hexlen>CRLF
+    FIO.Write(IntToHex(Length(ABytes), 1) + #13#10, FEnc);
+    SetLength(lIdBytes, Length(ABytes));
+    Move(ABytes[0], lIdBytes[0], Length(ABytes));
+    FIO.Write(lIdBytes);
+    FIO.Write(#13#10, FEnc); // trailing CRLF
+  except
+    FConnected := False;
+  end;
+end;
+
+procedure TMVCIndyChunkedWriter.Finish;
+begin
+  RawWrite('0'#13#10#13#10); // terminating chunk
+end;
+
+function TMVCIndyChunkedWriter.Connected: Boolean;
+begin
+  Result := FConnected;
+end;
+
+function TMVCIndyDirectResponse.CreateChunkedWriter: IMVCChunkedResponseWriter;
+begin
+  StreamingHandled := True; // engine skips function-return render; Flush no-ops
+  FChunkedStreaming := True; // keep-alive: do NOT force CloseConnection in Flush
+  Result := TMVCIndyChunkedWriter.Create(FResponseInfo, FContext.Connection.IOHandler);
 end;
 
 procedure TMVCIndyDirectResponse.SendRedirect(const AUrl: string);
