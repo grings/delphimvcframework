@@ -918,6 +918,17 @@ type
     procedure SendFile(const AFileName: string); virtual;
     procedure RenderFile(const AFileName: string); virtual;
     procedure RenderResponseStream; virtual;
+    procedure RenderStreamed(const AStreamed: TMVCStreamedResponse);
+    /// <summary>
+    /// Wrap a forward-only dataset for incremental chunked streaming. Return
+    /// the result from a functional action:
+    ///   function GetCustomers: TMVCStreamedResponse;
+    ///   begin Result := StreamDataSet(qry); end;
+    /// </summary>
+    function StreamDataSet(const ADataSet: TDataSet;
+      const ANameCase: TMVCNameCase = ncLowerCase;
+      const AOwnsDataSet: Boolean = True;
+      const AIgnoredFields: TMVCIgnoredList = nil): TMVCStreamedResponse;
     function ResponseStream: TStringBuilder;
     procedure Render(const AContent: string); overload;
     procedure Render(const AStatusCode: Integer; const AContent: string); overload;
@@ -1555,6 +1566,7 @@ uses
   MVCFramework.SysControllers,
   MVCFramework.Serializer.JsonDataObjects,
   MVCFramework.Serializer.Streaming,
+  MVCFramework.Serializer.Streaming.DataSet,
   MVCFramework.JSONRPC,
   MVCFramework.Router,
   MVCFramework.Rtti.Utils,
@@ -2993,7 +3005,11 @@ begin
                           if lResponseObject <> nil then
                           begin
                             // https://learn.microsoft.com/en-us/aspnet/core/web-api/action-return-types?view=aspnetcore-7.0
-                            if lResponseObject is TDataSet then
+                            if lResponseObject is TMVCStreamedResponse then
+                            begin
+                              lSelectedController.RenderStreamed(TMVCStreamedResponse(lResponseObject));
+                            end
+                            else if lResponseObject is TDataSet then
                             begin
                               lSelectedController.Render(TDataSet(lResponseObject), False);
                             end
@@ -5134,6 +5150,34 @@ end;
 procedure TMVCRenderer.RenderResponseStream;
 begin
   Render(ResponseStream.ToString);
+end;
+
+procedure TMVCRenderer.RenderStreamed(const AStreamed: TMVCStreamedResponse);
+var
+  lWriter: IMVCChunkedResponseWriter;
+begin
+  // May raise on an unsupported backend BEFORE any byte is sent -> handled by
+  // the normal error pipeline (e.g. 501).
+  lWriter := FContext.Response.CreateChunkedWriter;
+  try
+    AStreamed.StreamTo(lWriter, FContext);
+    lWriter.Finish;
+  except
+    on E: Exception do
+    begin
+      // Mid-stream failure: headers already sent, so no HTTP error is
+      // possible. Do NOT Finish (leave the body truncated) and do NOT
+      // re-raise past the handler. Log and let the connection close.
+      LogE('RenderStreamed aborted mid-stream: ' + E.Message);
+    end;
+  end;
+end;
+
+function TMVCRenderer.StreamDataSet(const ADataSet: TDataSet;
+  const ANameCase: TMVCNameCase; const AOwnsDataSet: Boolean;
+  const AIgnoredFields: TMVCIgnoredList): TMVCStreamedResponse;
+begin
+  Result := TMVCStreamedDataSet.Create(ADataSet, ANameCase, AOwnsDataSet, AIgnoredFields);
 end;
 
 procedure TMVCRenderer.RenderSSE(const EventID, EventData: string; EventName: string;
