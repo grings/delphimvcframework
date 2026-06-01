@@ -193,6 +193,14 @@ type
     [MVCProduces('application/json')]
     procedure TestStreamedDataSet;
 
+    // Chunked streaming via TMVCStreamedResponse: same forward-only PostgreSQL
+    // cursor as /streameddataset but emitted through the engine's chunk writer
+    // (Indy chunked transfer / HTTP.sys). The query and its connection are
+    // owned by TOwningQuery and freed after the last chunk is sent.
+    [MVCPath('/streameddatasetchunked')]
+    [MVCHTTPMethod([httpGET])]
+    function GetStreamedDataSetChunked: TMVCStreamedResponse;
+
     [MVCPath('/wrappedpeople')]
     [MVCHTTPMethod([httpGET])]
     procedure TestGetWrappedPeople;
@@ -676,6 +684,33 @@ uses
   FireDAC.Stan.Option,
   Winapi.Windows,
   System.IOUtils, MVCFramework.Tests.Serializer.Entities, System.DateUtils;
+
+type
+  // The streamed-response wrapper frees the QUERY after rendering; this helper
+  // makes the query also own its connection, so the connection stays alive for
+  // the whole stream and is freed right after the query.
+  TOwningQuery = class(TFDQuery)
+  private
+    FOwnedConn: TFDConnection;
+  public
+    constructor CreateOwning(const AConnDefName: string);
+    destructor Destroy; override;
+  end;
+
+constructor TOwningQuery.CreateOwning(const AConnDefName: string);
+begin
+  inherited Create(nil);
+  FOwnedConn := TFDConnection.Create(nil);
+  FOwnedConn.ConnectionDefName := AConnDefName;
+  FOwnedConn.Open;
+  Connection := FOwnedConn;
+end;
+
+destructor TOwningQuery.Destroy;
+begin
+  inherited;        // close/free the query first
+  FOwnedConn.Free;  // then the connection it used
+end;
 
 { TTestServerController }
 
@@ -1218,6 +1253,19 @@ begin
   finally
     lConn.Free;
   end;
+end;
+
+function TTestServerController.GetStreamedDataSetChunked: TMVCStreamedResponse;
+var
+  lQry: TOwningQuery;
+begin
+  lQry := TOwningQuery.CreateOwning(STREAM_PG_CONN_DEF);
+  lQry.FetchOptions.Mode := TFDFetchMode.fmOnDemand;
+  lQry.FetchOptions.Unidirectional := True;
+  lQry.UpdateOptions.ReadOnly := True;
+  lQry.UpdateOptions.RequestLive := False;
+  lQry.Open('SELECT id, first_name, last_name FROM streamed_people ORDER BY id');
+  Result := StreamDataSet(lQry, TMVCNameCase.ncLowerCase, True);
 end;
 
 procedure TTestServerController.TestSearchPeopleBySample;
