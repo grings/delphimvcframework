@@ -97,6 +97,7 @@ type
   TMVCCustomData = TSessionData;
   TMVCBaseViewEngine = class;
   TMVCViewEngineClass = class of TMVCBaseViewEngine;
+  TWebContext = class;
 
   MVCBaseAttribute = class(TCustomAttribute)
 
@@ -485,6 +486,36 @@ type
     property Files: TAbstractWebRequestFiles read GetFiles;
   end;
 
+  /// <summary>
+  /// Backend-agnostic incremental HTTP body writer using Transfer-Encoding:
+  /// chunked. Obtained from TMVCWebResponse.CreateChunkedWriter. Implemented
+  /// by the Indy Direct and HTTP.sys response adapters; the base raises.
+  /// </summary>
+  IMVCChunkedResponseWriter = interface
+    ['{8E2D1F4A-9C7B-4E6A-B3D5-1A2C3E4F5061}']
+    /// Emit status line + headers (chunked, keep-alive). Call exactly once,
+    /// before the first WriteChunk.
+    procedure SendHeaders(const AContentType, ACharset: string);
+    /// Emit one chunk of raw body bytes.
+    procedure WriteChunk(const ABytes: TBytes);
+    /// Emit the terminating chunk and complete the response.
+    procedure Finish;
+    /// False once the client has gone away (write failed).
+    function Connected: Boolean;
+  end;
+
+  /// <summary>
+  /// Abstract base for response objects that stream their body incrementally
+  /// when returned from a functional action. Recognized by the engine's
+  /// tkClass dispatch branch. Concrete subclass: TMVCStreamedDataSet (unit
+  /// MVCFramework.Serializer.Streaming.DataSet).
+  /// </summary>
+  TMVCStreamedResponse = class abstract
+  public
+    procedure StreamTo(const AWriter: IMVCChunkedResponseWriter;
+      const AContext: TWebContext); virtual; abstract;
+  end;
+
   TMVCWebResponse = class
   private
     FFlushOnDestroy: Boolean;
@@ -520,6 +551,12 @@ type
     function GetCustomHeader(const AName: string): string; virtual; abstract;
     procedure SendRedirect(const AUrl: string); virtual; abstract;
     procedure SendResponse; virtual; abstract;
+    /// <summary>
+    /// Returns a chunked body writer for this backend. Base implementation
+    /// raises: only Indy Direct and HTTP.sys override it. Called before any
+    /// byte is sent, so an unsupported backend fails cleanly.
+    /// </summary>
+    function CreateChunkedWriter: IMVCChunkedResponseWriter; virtual;
     property StatusCode: Integer read GetStatusCode write SetStatusCode;
     property ReasonString: string read GetReasonString write SetReasonString;
     property ContentType: string read GetContentType write SetContentType;
@@ -2031,6 +2068,13 @@ begin
     end;
   end;
   inherited Destroy;
+end;
+
+function TMVCWebResponse.CreateChunkedWriter: IMVCChunkedResponseWriter;
+begin
+  raise EMVCException.Create(HTTP_STATUS.NotImplemented,
+    'Streaming response (TMVCStreamedDataSet) requires the Indy Direct or ' +
+    'HTTP.sys backend; the current backend does not support chunked streaming');
 end;
 
 { TMVCUser }
