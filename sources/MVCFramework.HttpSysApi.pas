@@ -346,6 +346,13 @@ function HttpSendHttpResponse(ReqQueueHandle: THandle; RequestId: HTTP_REQUEST_I
   pReserved1: Pointer; Reserved2: ULONG; pOverlapped: POverlapped;
   pLogData: Pointer): ULONG; stdcall;
 
+/// <summary>Send (additional) entity body data for a response already started
+/// with HttpSendHttpResponse(... MORE_DATA ...). Used for chunked streaming.</summary>
+function HttpSendResponseEntityBody(ReqQueueHandle: THandle; RequestId: HTTP_REQUEST_ID; Flags: ULONG;
+  EntityChunkCount: USHORT; pEntityChunks: PHTTP_DATA_CHUNK; var pBytesSent: ULONG;
+  pReserved1: Pointer; Reserved2: ULONG; pOverlapped: POverlapped;
+  pLogData: Pointer): ULONG; stdcall;
+
 /// <summary>Close a request queue handle</summary>
 function HttpCloseRequestQueue(ReqQueueHandle: THandle): ULONG;
 
@@ -363,6 +370,7 @@ function HttpRemoveUrl; external HTTPAPI_DLL;
 function HttpReceiveHttpRequest; external HTTPAPI_DLL;
 function HttpReceiveRequestEntityBody; external HTTPAPI_DLL;
 function HttpSendHttpResponse; external HTTPAPI_DLL;
+function HttpSendResponseEntityBody; external HTTPAPI_DLL;
 
 function HttpCloseRequestQueue(ReqQueueHandle: THandle): ULONG;
 begin
