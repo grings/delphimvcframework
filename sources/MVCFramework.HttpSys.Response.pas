@@ -60,6 +60,7 @@ type
     FCookies: TCookieCollection;
     FHeadersSent: Boolean;
     FDate: TDateTime;
+    procedure MarkStreamingHandled;
   protected
     function GetCustomHeaders: TStrings; override;
     function GetReasonString: string; override;
@@ -89,6 +90,7 @@ type
     function GetCustomHeader(const AName: string): string; override;
     procedure SendRedirect(const AUrl: string); override;
     procedure SendResponse; override;
+    function CreateChunkedWriter: IMVCChunkedResponseWriter; override;
   end;
 
 {$ENDIF}
@@ -447,6 +449,105 @@ end;
 procedure TMVCHttpSysResponse.SendResponse;
 begin
   Flush;
+end;
+
+procedure TMVCHttpSysResponse.MarkStreamingHandled;
+begin
+  FHeadersSent := True; // Flush() becomes a no-op
+end;
+
+type
+  TMVCHttpSysChunkedWriter = class(TInterfacedObject, IMVCChunkedResponseWriter)
+  private
+    FReqQueueHandle: THandle;
+    FRequestId: HTTP_REQUEST_ID;
+    FConnected: Boolean;
+    FContentTypeAnsi: UTF8String; // kept alive while the response is open
+    FReasonAnsi: UTF8String;
+  public
+    constructor Create(AReqQueueHandle: THandle; ARequestId: HTTP_REQUEST_ID);
+    procedure SendHeaders(const AContentType, ACharset: string);
+    procedure WriteChunk(const ABytes: TBytes);
+    procedure Finish;
+    function Connected: Boolean;
+  end;
+
+constructor TMVCHttpSysChunkedWriter.Create(AReqQueueHandle: THandle;
+  ARequestId: HTTP_REQUEST_ID);
+begin
+  inherited Create;
+  FReqQueueHandle := AReqQueueHandle;
+  FRequestId := ARequestId;
+  FConnected := True;
+end;
+
+procedure TMVCHttpSysChunkedWriter.SendHeaders(const AContentType, ACharset: string);
+var
+  lResponse: HTTP_RESPONSE;
+  lBytesSent: ULONG;
+  lResult: ULONG;
+begin
+  FillChar(lResponse, SizeOf(lResponse), 0);
+  lResponse.Version.MajorVersion := 1;
+  lResponse.Version.MinorVersion := 1;
+  lResponse.StatusCode := 200;
+  FReasonAnsi := 'OK';
+  lResponse.pReason := PAnsiChar(FReasonAnsi);
+  lResponse.ReasonLength := Length(FReasonAnsi);
+  FContentTypeAnsi := UTF8String(AContentType + '; charset=' + ACharset);
+  lResponse.Headers.KnownHeaders[Ord(HttpHeaderResponseContentType)].RawValueLength :=
+    Length(FContentTypeAnsi);
+  lResponse.Headers.KnownHeaders[Ord(HttpHeaderResponseContentType)].pRawValue :=
+    PAnsiChar(FContentTypeAnsi);
+  // No Content-Length + MORE_DATA -> http.sys frames the body as chunked for
+  // HTTP/1.1 clients and keeps the connection alive.
+  lResponse.EntityChunkCount := 0;
+  lResponse.pEntityChunks := nil;
+  lResult := HttpSendHttpResponse(FReqQueueHandle, FRequestId,
+    HTTP_SEND_RESPONSE_FLAG_MORE_DATA, @lResponse, nil, lBytesSent, nil, 0, nil, nil);
+  if lResult <> NO_ERROR then
+    FConnected := False;
+end;
+
+procedure TMVCHttpSysChunkedWriter.WriteChunk(const ABytes: TBytes);
+var
+  lChunk: HTTP_DATA_CHUNK;
+  lBytesSent: ULONG;
+  lResult: ULONG;
+begin
+  if (not FConnected) or (Length(ABytes) = 0) then
+    Exit;
+  FillChar(lChunk, SizeOf(lChunk), 0);
+  lChunk.DataChunkType := HttpDataChunkFromMemory;
+  lChunk.FromMemory.pBuffer := @ABytes[0];
+  lChunk.FromMemory.BufferLength := Length(ABytes);
+  lResult := HttpSendResponseEntityBody(FReqQueueHandle, FRequestId,
+    HTTP_SEND_RESPONSE_FLAG_MORE_DATA, 1, @lChunk, lBytesSent, nil, 0, nil, nil);
+  if lResult <> NO_ERROR then
+    FConnected := False;
+end;
+
+procedure TMVCHttpSysChunkedWriter.Finish;
+var
+  lBytesSent: ULONG;
+begin
+  if not FConnected then
+    Exit;
+  // flags = 0 (no MORE_DATA) -> completes the response
+  HttpSendResponseEntityBody(FReqQueueHandle, FRequestId, 0, 0, nil,
+    lBytesSent, nil, 0, nil, nil);
+end;
+
+function TMVCHttpSysChunkedWriter.Connected: Boolean;
+begin
+  Result := FConnected;
+end;
+
+function TMVCHttpSysResponse.CreateChunkedWriter: IMVCChunkedResponseWriter;
+begin
+  StreamingHandled := True;
+  MarkStreamingHandled;
+  Result := TMVCHttpSysChunkedWriter.Create(FReqQueueHandle, FRequestId);
 end;
 
 {$ENDIF}
