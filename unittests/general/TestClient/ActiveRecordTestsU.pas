@@ -3052,27 +3052,11 @@ begin
     'SELECT g, ''First'' || g, ''Last'' || g FROM generate_series(1, ' + IntToStr(ROW_COUNT) + ') g');
   try
     lRESTClient := TMVCRESTClient.New.BaseURL(TEST_SERVER_ADDRESS, 8888);
-    // Bounded read timeout so the HTTP.sys-specific path (below) fails fast rather
-    // than blocking the whole suite for the default 60s.
+    // Bounded read timeout: a streamed response that never signals end-of-body
+    // would otherwise hang the suite. With a correct EOF this completes in well
+    // under a second; a timeout here IS a failure (no longer excused).
     lRESTClient.ReadTimeout(15000);
-    try
-      lResp := lRESTClient.Get('/streameddatasetchunked');
-    except
-      on E: Exception do
-      begin
-        // HTTP.sys backend: http.sys frames the self-emitted body as chunked
-        // (HttpSendResponseEntityBody + MORE_DATA, no Content-Length), but the
-        // System.Net THTTPClient (WinHTTP) used here stalls decoding that
-        // kernel-mode chunked stream and the read times out. This is a known
-        // client/http.sys interaction (the sibling streaming endpoint sidesteps
-        // it by buffering on HTTP.sys); it is NOT a defect of the chunked writer,
-        // which is verified end-to-end on the Indy Direct backend. Treat a read
-        // timeout as the documented HTTP.sys limitation rather than a failure.
-        Assert.IsTrue(Pos('12002', E.Message) > 0,
-          'unexpected error from chunked endpoint: ' + E.Message);
-        Exit;
-      end;
-    end;
+    lResp := lRESTClient.Get('/streameddatasetchunked');
 
     if lResp.StatusCode <> 200 then
     begin
@@ -3083,15 +3067,15 @@ begin
       Exit;
     end;
 
-    // Supported backend (Indy Direct / HTTP.sys): chunked => the size is not known
-    // up front, so NO Content-Length is present (the client decodes chunked
-    // transparently). A present Content-Length would mean the body was buffered.
+    // Supported streaming backend (Indy Direct = chunked + keep-alive; HTTP.sys =
+    // close-delimited). Either way the body size is unknown up front, so there is
+    // NO Content-Length (a present one would mean the body had been buffered).
     Assert.AreEqual('', lResp.HeaderValue('Content-Length'),
-      'a chunked streamed response must not carry a Content-Length header');
+      'a streamed response must not carry a Content-Length header');
 
     lBase := TJsonBaseObject.Parse(lResp.Content);
     try
-      Assert.IsTrue(lBase is TJsonArray, 'chunked response is not a JSON array');
+      Assert.IsTrue(lBase is TJsonArray, 'streamed response is not a JSON array');
       lArr := TJsonArray(lBase);
       Assert.AreEqual<Integer>(ROW_COUNT, lArr.Count, 'streamed array element count mismatch');
       Assert.AreEqual<Integer>(1, lArr.O[0].I['id']);
@@ -3102,23 +3086,12 @@ begin
       lBase.Free;
     end;
 
-    // Keep-alive: the same client/connection must be reusable for a second
-    // request after a chunked stream (chunked terminates with a 0-chunk, the
-    // connection is NOT closed). On the supported streaming backend (Indy Direct)
-    // this returns 200; if HTTP.sys ever reaches here, a read timeout is the same
-    // documented client/http.sys limitation excused above.
-    try
-      lResp := lRESTClient.Get('/streameddatasetchunked');
-    except
-      on E: Exception do
-      begin
-        Assert.IsTrue(Pos('12002', E.Message) > 0,
-          'unexpected error on keep-alive chunked request: ' + E.Message);
-        Exit;
-      end;
-    end;
+    // The endpoint is repeatable: a second request returns 200 — on Indy Direct
+    // over the kept-alive connection, on HTTP.sys over a fresh connection (the
+    // stream is close-delimited there). A hang or broken state would fail here.
+    lResp := lRESTClient.Get('/streameddatasetchunked');
     Assert.AreEqual<Integer>(200, lResp.StatusCode,
-      'connection not reusable after chunked stream (keep-alive broken)');
+      'streamed endpoint not repeatable (second request failed)');
   finally
     ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE IF EXISTS streamed_people');
   end;
