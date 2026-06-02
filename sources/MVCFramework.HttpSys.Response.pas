@@ -533,9 +533,15 @@ var
 begin
   if not FConnected then
     Exit;
-  // flags = 0 (no MORE_DATA) -> completes the response
-  HttpSendResponseEntityBody(FReqQueueHandle, FRequestId, 0, 0, nil,
-    lBytesSent, nil, 0, nil, nil);
+  // Final body call: clearing MORE_DATA alone leaves the response with no
+  // Content-Length, no chunked framing and an open connection, so the client
+  // never sees end-of-body and stalls until its read timeout. DISCONNECT
+  // completes the response by closing the connection, giving every client a
+  // clean EOF (same close-delimited model the Indy SSE/array writers use).
+  // Trade-off: no keep-alive on HTTP.sys (Indy Direct keeps real chunked +
+  // keep-alive).
+  HttpSendResponseEntityBody(FReqQueueHandle, FRequestId,
+    HTTP_SEND_RESPONSE_FLAG_DISCONNECT, 0, nil, lBytesSent, nil, 0, nil, nil);
 end;
 
 function TMVCHttpSysChunkedWriter.Connected: Boolean;
