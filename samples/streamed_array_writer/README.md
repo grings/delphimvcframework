@@ -21,7 +21,7 @@ different sources:
 | `GET /stream/objectlist` | a `TObjectList<TPerson>` you already hold | the list is in memory (you built it); the JSON payload is **not** |
 | `GET /stream/datasetfunc` | a functional action that just **returns** a `TDataSet` | the zero-code path: the framework serializes it; see the caveat below |
 | `GET /stream/enumeration` | a lazy `TEnumerable<TPerson>` reading a file line by line | the file is never loaded whole; at most one `TPerson` exists at a time — the realistic "stream objects read from a file or DB cursor" case |
-| `GET /stream/datasetstreamed` | a functional action that returns `TMVCStreamedResponse` (via `StreamDataSet`) | declarative like `/datasetfunc` but sends `Transfer-Encoding: chunked` with no `Content-Length`; framework RAM stays flat; Indy-based backends only |
+| `GET /stream/datasetstreamed` | a functional action that returns `TMVCStreamedResponse` (via `StreamDataSet`) | declarative like `/datasetfunc` but streams incrementally with flat framework RAM and no `Content-Length`. Indy Direct: `Transfer-Encoding: chunked` + keep-alive. HTTP.sys: close-delimited body (no keep-alive). Not on WebBroker (raises 501). |
 
 The enumeration source (`PeopleSourcesU.pas`) is a plain `TEnumerable<TPerson>` /
 `TEnumerator<TPerson>` pair backed by a `TStreamReader`. It yields one `TPerson`
@@ -67,8 +67,8 @@ socket record by record — it is a different mechanism:
 | JSON DOM built | no (rows → bytes directly) | no | no |
 | DB-side RAM | bounded (the cursor is unidirectional) | bounded | bounded |
 | **Framework-side RAM** | **the whole JSON payload** (a memory stream) | **one record** | **one record** |
-| `Content-Length` | **yes** (size is known before sending) | no (`Transfer-Encoding: chunked`) | no (`Connection: close`) |
-| Backends | all (WebBroker / Indy / HTTP.sys) | Indy-based only | Indy-based only |
+| `Content-Length` | **yes** (size is known before sending) | no (chunked on Indy, close-delimited on HTTP.sys) | no (`Connection: close`) |
+| Backends | all (WebBroker / Indy / HTTP.sys) | Indy Direct + HTTP.sys | Indy-based only |
 | Code to write | zero | zero | you drive the loop |
 
 So returning a `TDataSet` is "streaming **serialization** into a buffer", not
