@@ -1,37 +1,42 @@
-# Streamed Array Writer
+# Streamed Array Writer — Comprehensive Streaming Showcase
 
-Explicit, developer-driven streaming of a JSON array with **`TMVCJSONArrayWriter`**
-(unit `MVCFramework.SSE.Writer`).
+Single-file reference for every incremental (socket-level) streaming mechanism
+in DelphiMVCFramework. Nine endpoints, three wire-format families plus two
+declarative paths, all driven from the same SQLite `people` table (200k rows)
+or from an in-memory / file source.
 
-The action opens `[`, pushes one JSON value per iteration straight to the
-socket, and closes `]`. Between iterations only the running element lives in
-memory, so **server RAM stays flat** no matter how many elements are emitted.
-The client receives one ordinary, valid JSON array.
+## Endpoints at a glance
 
-## The point: the writer is source-agnostic
+| Route | Mechanism | Action shape | Wire format | Content-Length | Notes |
+|---|---|---|---|---|---|
+| `GET /stream/dataset` | `TMVCJSONArrayWriter` | `procedure` | `application/json` | no | DB cursor (raw column names), row by row |
+| `GET /stream/dbobjects` | `TMVCJSONArrayWriter` | `procedure` | `application/json` | no | DB cursor → `TPerson`, serialized with object rules |
+| `GET /stream/objectlist` | `TMVCJSONArrayWriter` | `procedure` | `application/json` | no | In-memory `TObjectList<TPerson>` |
+| `GET /stream/enumeration` | `TMVCJSONArrayWriter` | `procedure` | `application/json` | no | Lazy `TEnumerable<TPerson>` backed by a file |
+| `GET /stream/sse` | `TMVCSSEWriter` | `procedure` | `text/event-stream` | no | One named `person` event per row; final `done` event |
+| `GET /stream/jsonl` | `TMVCJSONLWriter` | `procedure` | `application/x-ndjson` | no | One JSON object per line (NDJSON / JSON Lines) |
+| `GET /stream/csv` | `TMVCCSVWriter` | `procedure` | `text/csv` | no | Header from `TPerson` RTTI; one CSV row per DB row |
+| `GET /stream/datasetfunc` | framework (serializer) | `function: TDataSet` | `application/json` | **yes** | Zero streaming code; full JSON buffered in memory |
+| `GET /stream/datasetstreamed` | framework (chunked) | `function: TMVCStreamedResponse` | `application/json` | no | Declarative + chunked; flat framework RAM |
 
-`Send(const AJSONValue: string)` takes **any complete JSON value**. It doesn't
-know or care where the value came from, so the *same* writer streams three very
-different sources:
+All streaming-writer endpoints have no `Content-Length` because the total size
+is not known before streaming starts. `/stream/datasetfunc` is the contrast
+case: the framework serializes the whole result into a memory buffer, so it can
+set `Content-Length` before writing the response.
 
-| Route | Source | Notes |
-|-------|--------|-------|
-| `GET /stream/dataset` | forward-only FireDAC cursor (`fmOnDemand` + `Unidirectional`), raw record | neither the dataset nor the JSON is ever fully in memory; JSON uses the raw column names |
-| `GET /stream/dbobjects` | the same cursor, each row mapped to a `TPerson` | hydrate one entity per row, serialize it, discard it — one row + one object + one JSON value at a time; JSON follows the object's rules |
-| `GET /stream/objectlist` | a `TObjectList<TPerson>` you already hold | the list is in memory (you built it); the JSON payload is **not** |
-| `GET /stream/datasetfunc` | a functional action that just **returns** a `TDataSet` | the zero-code path: the framework serializes it; see the caveat below |
-| `GET /stream/enumeration` | a lazy `TEnumerable<TPerson>` reading a file line by line | the file is never loaded whole; at most one `TPerson` exists at a time — the realistic "stream objects read from a file or DB cursor" case |
-| `GET /stream/datasetstreamed` | a functional action that returns `TMVCStreamedResponse` (via `StreamDataSet`) | declarative like `/datasetfunc` but streams incrementally with flat framework RAM and no `Content-Length`. Indy Direct: `Transfer-Encoding: chunked` + keep-alive. HTTP.sys: close-delimited body (no keep-alive). Not on WebBroker (raises 501). |
+## TMVCJSONArrayWriter — source-agnostic
 
-The enumeration source (`PeopleSourcesU.pas`) is a plain `TEnumerable<TPerson>` /
-`TEnumerator<TPerson>` pair backed by a `TStreamReader`. It yields one `TPerson`
-per line and frees the previous one as the cursor advances, so a regular
-`for p in source do` loop streams a 200k-line file with flat memory. Swap the
-file reader for a DB cursor or a socket and nothing else changes.
+The four `/stream/{dataset,dbobjects,objectlist,enumeration}` rows all use the
+same `TMVCJSONArrayWriter`. `Send(const AJSONValue: string)` takes any complete
+JSON value and doesn't care where it came from, so the same writer drives:
 
-Per element you pick the matching serializer call:
-`Serializer.SerializeDataSetRecord(qry)` for a dataset row,
-`Serializer.SerializeObject(obj)` for an object.
+- a forward-only FireDAC cursor (raw record or hydrated object)
+- a `TObjectList<T>` already in memory
+- a `TEnumerable<T>` that reads a file line by line (never loaded in full)
+
+The point: the wire format and the push loop are independent of the source.
+Swap the source (DB cursor, file, network stream) without touching the writer
+or the serializer call.
 
 ## Run
 
@@ -39,55 +44,72 @@ Per element you pick the matching serializer call:
 StreamedArrayWriterSample.exe
 ```
 
-On first launch it creates `people.db` (SQLite, 200k rows) and `people_feed.csv`
-(200k lines, the feed for the enumeration demo), then listens on
-**http://localhost:8991** (Indy Direct).
+On first launch it creates `people.db` (SQLite, 200k rows) and
+`people_feed.csv` (200k lines, feed for the enumeration demo), then listens
+on **http://localhost:8991** (Indy Direct).
 
+```bash
+# JSON array — no Content-Length proves the body is streamed
+curl -s -D - http://localhost:8991/stream/dataset       -o out.json
+curl -s -D - http://localhost:8991/stream/dbobjects     -o out.json
+curl -s -D - http://localhost:8991/stream/objectlist    -o out.json
+curl -s -D - http://localhost:8991/stream/enumeration   -o out.json
+
+# Server-Sent Events — text/event-stream, one event per row
+curl -s -D - http://localhost:8991/stream/sse           -o out.txt
+
+# JSON Lines — one JSON object per line
+curl -s -D - http://localhost:8991/stream/jsonl         -o out.ndjson
+
+# CSV — header + one row per person
+curl -s -D - http://localhost:8991/stream/csv           -o out.csv
+
+# buffered: this one HAS Content-Length
+curl -s -D - http://localhost:8991/stream/datasetfunc   -o out.json
+
+# declarative + chunked: no Content-Length, flat framework RAM
+curl -s -D - http://localhost:8991/stream/datasetstreamed -o out.json
 ```
-# absence of Content-Length proves the body is streamed, not buffered
-curl -s -D - http://localhost:8991/stream/dataset      -o out.json
-curl -s -D - http://localhost:8991/stream/objectlist   -o out.json
-curl -s -D - http://localhost:8991/stream/enumeration  -o out.json
-# this one DOES have Content-Length (see caveat below)
-curl -s -D - http://localhost:8991/stream/datasetfunc      -o out.json
-# declarative + chunked: no Content-Length, keep-alive, flat framework RAM
-curl -s -D - http://localhost:8991/stream/datasetstreamed  -o out.json
-```
 
-## Explicit writer vs. returning a `TDataSet`
+## Explicit writer vs. returning a TDataSet vs. TMVCStreamedResponse
 
-`/stream/datasetfunc` is a plain functional action: `function GetPeopleDataSet:
-TDataSet; begin Result := ...; end;`. You write **no streaming code** and the
-framework serializes the dataset for you. But it does **not** stream to the
-socket record by record — it is a different mechanism:
-
-| | functional action `: TDataSet` | `TMVCStreamedResponse` via `StreamDataSet` | the four `TMVCJSONArrayWriter` endpoints |
+| | `function: TDataSet` | `function: TMVCStreamedResponse` | `TMVCJSONArrayWriter` / SSE / JSONL / CSV |
 |---|---|---|---|
-| Who serializes | the framework (`TMVCStreamingJsonSerializer`) | the framework | you, one value per `Send()` |
-| JSON DOM built | no (rows → bytes directly) | no | no |
-| DB-side RAM | bounded (the cursor is unidirectional) | bounded | bounded |
-| **Framework-side RAM** | **the whole JSON payload** (a memory stream) | **one record** | **one record** |
-| `Content-Length` | **yes** (size is known before sending) | no (chunked on Indy, close-delimited on HTTP.sys) | no (`Connection: close`) |
+| Who serializes | the framework | the framework | you, one value per `Send()` |
+| JSON DOM built | no (rows → bytes) | no | no |
+| DB-side RAM | bounded (unidirectional cursor) | bounded | bounded |
+| **Framework-side RAM** | **whole JSON payload** | **one record** | **one record** |
+| `Content-Length` | **yes** | no | no |
 | Backends | all (WebBroker / Indy / HTTP.sys) | Indy Direct + HTTP.sys | Indy-based only |
 | Code to write | zero | zero | you drive the loop |
+| Wire format | JSON array | JSON array | any (JSON array / SSE / JSONL / CSV) |
 
-So returning a `TDataSet` is "streaming **serialization** into a buffer", not
-"streaming to the socket". It is the right default for moderate result sets
-(works everywhere, has `Content-Length`, no code). Reach for the explicit
-writer when you must also keep **framework**-side RAM flat (very large or
-unbounded results) or when the source is not a single dataset (object lists,
-generators, merged sources, custom per-element logic).
+`/stream/datasetfunc` (return `TDataSet`) is "streaming **serialization** into a
+buffer" — the serializer never builds a DOM, but the complete JSON payload does
+exist in a `TMemoryStream` before the first byte is sent. Right choice for
+moderate result sets: works on all backends, adds `Content-Length`, needs no
+code. Use an explicit writer when you need flat **framework**-side RAM (very
+large or unbounded results), a non-JSON wire format (SSE, CSV, NDJSON), or a
+source that is not a single dataset.
 
-## Relation to `streaming_json_dataset`
+`/stream/datasetstreamed` (return `TMVCStreamedResponse`) gives you declarative
+syntax with true socket streaming: the framework writes chunked transfer
+directly to the Indy socket, keeps framework RAM flat, and requires no loop
+code. It works on Indy Direct and HTTP.sys but not on WebBroker. The trade-off
+vs. the explicit `TMVCJSONArrayWriter`: you cannot add per-row logic (joins,
+filtering, mapping to domain objects) — you just return a dataset.
 
-The sibling `streaming_json_dataset` sample focuses entirely on that implicit
-return-a-`TDataSet` path (here it is just `/stream/datasetfunc`). This sample
-adds the four explicit-writer variants alongside it for contrast.
+## Further reading
+
+See `docs/incremental-streaming.md` for the full guide covering writer
+internals, backpressure, disconnection handling and HTTP.sys differences.
 
 ## Requirements
 
-The four explicit-writer endpoints take over the raw socket, so they require an
-**Indy-based backend** (Indy Direct, or WebBroker hosted by
-`TIdHTTPWebBrokerBridge`); they cannot stream over an HTTP.sys socket.
-`/stream/datasetfunc` has no such restriction — it goes through the normal
-response path and works on every backend.
+All streaming-writer endpoints take over the raw Indy socket, so they require
+an **Indy-based backend** (Indy Direct or WebBroker hosted by
+`TIdHTTPWebBrokerBridge`). They cannot stream over an HTTP.sys socket.
+
+`/stream/datasetfunc` and `/stream/datasetstreamed` go through the normal
+response path (`datasetfunc` on all backends; `datasetstreamed` on Indy and
+HTTP.sys but not WebBroker).

@@ -1,25 +1,34 @@
 program StreamedArrayWriterSample;
 
 // ===========================================================================
-//  Explicit streamed JSON-array rendering with TMVCJSONArrayWriter.
+//  Comprehensive showcase of every incremental (socket-level) streaming
+//  mechanism in DelphiMVCFramework.
 //
-//  The writer is source-agnostic: the same object streams a DB cursor, an
-//  in-memory object list, or a lazy generator - element by element, directly
-//  to the socket, never buffering the whole JSON payload.
+//  Three wire-format families, nine endpoints total:
+//
+//    TMVCJSONArrayWriter  application/json       (well-formed JSON array)
+//      /stream/dataset      DB cursor, raw record shape    streamed, no CL
+//      /stream/dbobjects    DB cursor -> TPerson object    streamed, no CL
+//      /stream/objectlist   TObjectList<TPerson>           streamed, no CL
+//      /stream/enumeration  lazy file enumerator           streamed, no CL
+//
+//    TMVCSSEWriter        text/event-stream      (Server-Sent Events)
+//      /stream/sse          one event per DB row           streamed, no CL
+//
+//    TMVCJSONLWriter      application/x-ndjson   (JSON Lines / NDJSON)
+//      /stream/jsonl        one JSON object per line       streamed, no CL
+//
+//    TMVCCSVWriter        text/csv
+//      /stream/csv          one CSV row per DB row         streamed, no CL
+//
+//    Functional / declarative (no explicit writer)
+//      /stream/datasetfunc      return TDataSet             buffered, w/ CL
+//      /stream/datasetstreamed  return TMVCStreamedResponse chunked, no CL
 //
 //  Server: Indy Direct, port 8991.  DB: SQLite (people.db), 200k rows.
 //
-//  Routes (all return one valid JSON array):
-//    GET /stream/dataset      forward-only DB cursor    -> [...]
-//    GET /stream/objectlist   TObjectList<TPerson>      -> [...]
-//    GET /stream/enumeration  lazy generator (no list)  -> [...]
-//
-//  Verify (note the absence of Content-Length: the body is streamed):
-//    curl -s -D - http://localhost:8991/stream/dataset -o out.json
-//
-//  NB: the streaming writers require an Indy-based backend (Indy Direct or
-//  WebBroker on TIdHTTPWebBrokerBridge); they cannot take over an HTTP.sys
-//  socket.
+//  NOTE: all streaming writers require an Indy-based backend (Indy Direct or
+//  WebBroker on TIdHTTPWebBrokerBridge); they cannot stream over HTTP.sys.
 // ===========================================================================
 
 {$APPTYPE CONSOLE}
@@ -66,12 +75,15 @@ begin
 
     LServer := TMVCServerFactory.CreateIndyDirect(LEngine);
     LogI('Server listening on http://localhost:%d (Indy Direct)', [PORT]);
-    LogI('GET /stream/dataset      - DB cursor (raw record)   -> streamed, no CL');
-    LogI('GET /stream/dbobjects    - DB cursor -> domain obj   -> streamed, no CL');
-    LogI('GET /stream/objectlist   - TObjectList<TPerson>     -> streamed, no CL');
-    LogI('GET /stream/enumeration  - lazy file enumerator     -> streamed, no CL');
-    LogI('GET /stream/datasetfunc      - return TDataSet (0 code)    -> buffered, w/ CL');
-    LogI('GET /stream/datasetstreamed  - return TMVCStreamedResponse -> chunked, keep-alive, flat RAM');
+    LogI('GET /stream/dataset          - JSONArray  DB cursor (raw)     -> streamed, no CL');
+    LogI('GET /stream/dbobjects        - JSONArray  DB cursor->TPerson  -> streamed, no CL');
+    LogI('GET /stream/objectlist       - JSONArray  TObjectList<T>      -> streamed, no CL');
+    LogI('GET /stream/enumeration      - JSONArray  lazy file enum      -> streamed, no CL');
+    LogI('GET /stream/sse              - SSE        DB cursor -> events -> streamed, no CL');
+    LogI('GET /stream/jsonl            - JSONL      DB cursor->ndjson   -> streamed, no CL');
+    LogI('GET /stream/csv              - CSV        DB cursor->csv rows -> streamed, no CL');
+    LogI('GET /stream/datasetfunc      - JSON       return TDataSet     -> buffered, w/ CL');
+    LogI('GET /stream/datasetstreamed  - JSON       TMVCStreamedResp    -> chunked, no CL');
     LogI('CTRL+C to shutdown.');
     LServer.RunAndWait(PORT)
   finally

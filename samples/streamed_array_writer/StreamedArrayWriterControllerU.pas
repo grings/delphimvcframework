@@ -1,35 +1,60 @@
 unit StreamedArrayWriterControllerU;
 
 // ===========================================================================
-//  Explicit streamed JSON-array rendering with TMVCJSONArrayWriter.
+//  Comprehensive showcase of every incremental (socket-level) streaming
+//  mechanism in DelphiMVCFramework.
 //
-//  Unlike the "streaming_json_dataset" sample (where you just RETURN a
-//  TDataSet and the framework's streaming serializer emits it for you), here
-//  the action drives the loop itself: it opens "[", pushes one JSON value per
-//  iteration straight to the socket, and closes "]". Between iterations only
-//  the running element lives in memory, so server RAM stays flat no matter how
-//  many elements are emitted.
+//  Three wire-format families:
 //
-//  The point of this sample: the writer is SOURCE-AGNOSTIC. Send() takes any
-//  complete JSON value, so the very same writer streams:
-//    - a forward-only DB cursor, raw record shape   (/stream/dataset)
-//    - a forward-only DB cursor mapped to a domain   (/stream/dbobjects)
-//      object one row at a time
-//    - a fully loaded TObjectList<T>                 (/stream/objectlist)
-//    - a lazy object enumerator over a file          (/stream/enumeration)
-//      (or any external source)
+//    TMVCJSONArrayWriter  - emits one valid JSON array, element by element,
+//                          to the socket.  Four source variants:
+//      /stream/dataset      forward-only DB cursor, raw record shape
+//      /stream/dbobjects    forward-only DB cursor -> TPerson domain object
+//      /stream/objectlist   in-memory TObjectList<TPerson>
+//      /stream/enumeration  lazy TEnumerable<TPerson> backed by a file
+//
+//    TMVCSSEWriter        - text/event-stream (Server-Sent Events)
+//      /stream/sse          one event per DB row; used as a live/push feed
+//
+//    TMVCJSONLWriter      - application/x-ndjson (JSON Lines / NDJSON)
+//      /stream/jsonl        one JSON object per line, directly from DB cursor
+//
+//    TMVCCSVWriter        - text/csv
+//      /stream/csv          one CSV row per DB row, header derived from RTTI
+//
+//  Two declarative / functional paths (no explicit writer code):
+//      /stream/datasetfunc      return TDataSet    -> buffered, has Content-Length
+//      /stream/datasetstreamed  return TMVCStreamedResponse -> chunked, no CL
+//
+//  All DB-backed procedures share the private OpenPeopleCursor helper so the
+//  forward-only cursor setup is written exactly once.
+//
+//  NOTE: all streaming writers require an Indy-based backend.  This sample
+//  uses Indy Direct, so every endpoint works.
 // ===========================================================================
 
 interface
 
 uses
   Data.DB,
+  FireDAC.Comp.Client,
   MVCFramework, MVCFramework.Commons;
 
 type
   [MVCPath('/stream')]
   TStreamedArrayWriterController = class(TMVCController)
+  private
+    /// <summary>
+    /// Opens a forward-only, read-only FireDAC cursor over the people table.
+    /// AConn receives the newly created TFDConnection (caller must free both).
+    /// Raises on connection or query error (both objects are freed on raise).
+    /// </summary>
+    function OpenPeopleCursor(out AConn: TFDConnection): TFDQuery;
   public
+    // -----------------------------------------------------------------------
+    //  TMVCJSONArrayWriter endpoints (four sources, one wire format)
+    // -----------------------------------------------------------------------
+
     /// <summary>
     /// DATASET source: a forward-only FireDAC cursor (fmOnDemand +
     /// Unidirectional) streamed row by row. Neither the dataset nor the JSON
@@ -72,6 +97,58 @@ type
     [MVCHTTPMethod([httpGET])]
     procedure StreamEnumeration;
 
+    // -----------------------------------------------------------------------
+    //  TMVCSSEWriter endpoint (Server-Sent Events, text/event-stream)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// SSE source: the same forward-only cursor, each row emitted as one SSE
+    /// event named "person" whose data is the serialized row JSON and whose id
+    /// is the row id. After the loop a final "done" event is sent.
+    ///
+    /// Note: SSE is normally used for live/push feeds (e.g. chat, dashboard
+    /// updates). Here the writer is driven by a DB dataset to show the SSE
+    /// wire format in isolation, driven from any iterable source.
+    /// </summary>
+    [MVCPath('/sse')]
+    [MVCHTTPMethod([httpGET])]
+    [MVCProduces('text/event-stream')]
+    procedure StreamSSE;
+
+    // -----------------------------------------------------------------------
+    //  TMVCJSONLWriter endpoint (JSON Lines / NDJSON)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// JSON Lines source: one JSON object per line, each line self-contained
+    /// and parseable independently. The format is common for log pipelines,
+    /// bulk imports and streaming APIs that want line-delimited JSON rather
+    /// than a top-level array.
+    /// </summary>
+    [MVCPath('/jsonl')]
+    [MVCHTTPMethod([httpGET])]
+    [MVCProduces('application/x-ndjson')]
+    procedure StreamJSONL;
+
+    // -----------------------------------------------------------------------
+    //  TMVCCSVWriter endpoint (text/csv)
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// CSV source: one CSV row per DB row. The header is emitted once on the
+    /// first Send() call, with column names derived from the TPerson RTTI
+    /// properties (via the TClass overload). Each person object is created,
+    /// sent and freed inside the loop.
+    /// </summary>
+    [MVCPath('/csv')]
+    [MVCHTTPMethod([httpGET])]
+    [MVCProduces('text/csv')]
+    procedure StreamCSV;
+
+    // -----------------------------------------------------------------------
+    //  Declarative / functional endpoints (no explicit writer loop)
+    // -----------------------------------------------------------------------
+
     /// <summary>
     /// FUNCTIONAL-ACTION source (the zero-code path): just RETURN a TDataSet.
     /// The framework serializes it with the streaming JSON serializer (no JSON
@@ -80,8 +157,8 @@ type
     /// WITH a Content-Length. This is "streaming serialization into a buffer",
     /// not record-by-record streaming to the socket. It works on every backend
     /// and needs no streaming code. Note the response here HAS Content-Length,
-    /// unlike the four endpoints above. Connection is request-scoped (provided
-    /// by TMVCActiveRecordMiddleware), so it outlives the render.
+    /// unlike the explicit-writer endpoints above. Connection is request-scoped
+    /// (provided by TMVCActiveRecordMiddleware), so it outlives the render.
     /// </summary>
     [MVCPath('/datasetfunc')]
     [MVCHTTPMethod([httpGET])]
@@ -103,10 +180,10 @@ implementation
 uses
   System.SysUtils,
   System.Generics.Collections,
-  FireDAC.Comp.Client,
   FireDAC.Stan.Option,
   MVCFramework.ActiveRecord,
   MVCFramework.Serializer.Commons,
+  MVCFramework.Serializer.Intf,
   MVCFramework.SSE.Writer,
   PeopleSourcesU,
   StreamedArrayWriterConfigU;
@@ -120,44 +197,48 @@ const
 
 { TStreamedArrayWriterController }
 
+function TStreamedArrayWriterController.OpenPeopleCursor(out AConn: TFDConnection): TFDQuery;
+begin
+  AConn := TFDConnection.Create(nil);
+  AConn.ConnectionDefName := CON_DEF_NAME;
+  AConn.Open;
+  Result := TFDQuery.Create(nil);
+  try
+    Result.Connection := AConn;
+    Result.FetchOptions.Mode := TFDFetchMode.fmOnDemand;
+    Result.FetchOptions.Unidirectional := True;
+    Result.UpdateOptions.ReadOnly := True;
+    Result.UpdateOptions.RequestLive := False;
+    Result.Open('SELECT id, full_name, country, age FROM people ORDER BY id');
+  except
+    Result.Free;
+    AConn.Free;
+    raise;
+  end;
+end;
+
 procedure TStreamedArrayWriterController.StreamDataSet;
 var
   lConn: TFDConnection;
   lQry: TFDQuery;
   lWriter: TMVCJSONArrayWriter;
 begin
-  lConn := TFDConnection.Create(nil);
+  lQry := OpenPeopleCursor(lConn);
   try
-    lConn.ConnectionDefName := CON_DEF_NAME;
-    lConn.Open;
-
-    lQry := TFDQuery.Create(nil);
+    lWriter := TMVCJSONArrayWriter.Create(Context);
     try
-      lQry.Connection := lConn;
-      // Forward-only streaming cursor: rows are fetched on demand as Next is
-      // called, so the full result is never materialized server-side.
-      lQry.FetchOptions.Mode := TFDFetchMode.fmOnDemand;
-      lQry.FetchOptions.Unidirectional := True;
-      lQry.UpdateOptions.ReadOnly := True;
-      lQry.UpdateOptions.RequestLive := False;
-      lQry.Open('SELECT id, full_name, country, age FROM people ORDER BY id');
-
-      lWriter := TMVCJSONArrayWriter.Create(Context);
-      try
-        while not lQry.Eof do
-        begin
-          if not lWriter.Connected then // client disconnected: stop early
-            Break;
-          lWriter.Send(Serializer.SerializeDataSetRecord(lQry));
-          lQry.Next;
-        end;
-      finally
-        lWriter.Free; // emits the closing "]" and closes the socket
+      while not lQry.Eof do
+      begin
+        if not lWriter.Connected then // client disconnected: stop early
+          Break;
+        lWriter.Send(Serializer.SerializeDataSetRecord(lQry));
+        lQry.Next;
       end;
     finally
-      lQry.Free;
+      lWriter.Free; // emits the closing "]" and closes the socket
     end;
   finally
+    lQry.Free;
     lConn.Free;
   end;
 end;
@@ -169,49 +250,34 @@ var
   lWriter: TMVCJSONArrayWriter;
   lPerson: TPerson;
 begin
-  lConn := TFDConnection.Create(nil);
+  lQry := OpenPeopleCursor(lConn);
   try
-    lConn.ConnectionDefName := CON_DEF_NAME;
-    lConn.Open;
-
-    lQry := TFDQuery.Create(nil);
+    lWriter := TMVCJSONArrayWriter.Create(Context);
     try
-      lQry.Connection := lConn;
-      // Same forward-only streaming cursor as /dataset.
-      lQry.FetchOptions.Mode := TFDFetchMode.fmOnDemand;
-      lQry.FetchOptions.Unidirectional := True;
-      lQry.UpdateOptions.ReadOnly := True;
-      lQry.UpdateOptions.RequestLive := False;
-      lQry.Open('SELECT id, full_name, country, age FROM people ORDER BY id');
-
-      lWriter := TMVCJSONArrayWriter.Create(Context);
-      try
-        while not lQry.Eof do
-        begin
-          if not lWriter.Connected then
-            Break;
-          // Hydrate one domain object from the current row, serialize it with
-          // the object's own rules, then discard it. Only one row, one object
-          // and one JSON value are alive at any instant.
-          lPerson := TPerson.Create(
-            lQry.FieldByName('id').AsInteger,
-            lQry.FieldByName('full_name').AsString,
-            lQry.FieldByName('country').AsString,
-            lQry.FieldByName('age').AsInteger);
-          try
-            lWriter.Send(Serializer.SerializeObject(lPerson));
-          finally
-            lPerson.Free;
-          end;
-          lQry.Next;
+      while not lQry.Eof do
+      begin
+        if not lWriter.Connected then
+          Break;
+        // Hydrate one domain object from the current row, serialize it with
+        // the object's own rules, then discard it. Only one row, one object
+        // and one JSON value are alive at any instant.
+        lPerson := TPerson.Create(
+          lQry.FieldByName('id').AsInteger,
+          lQry.FieldByName('full_name').AsString,
+          lQry.FieldByName('country').AsString,
+          lQry.FieldByName('age').AsInteger);
+        try
+          lWriter.Send(Serializer.SerializeObject(lPerson));
+        finally
+          lPerson.Free;
         end;
-      finally
-        lWriter.Free;
+        lQry.Next;
       end;
     finally
-      lQry.Free;
+      lWriter.Free;
     end;
   finally
+    lQry.Free;
     lConn.Free;
   end;
 end;
@@ -273,6 +339,123 @@ begin
     end;
   finally
     lSource.Free;
+  end;
+end;
+
+procedure TStreamedArrayWriterController.StreamSSE;
+var
+  lConn: TFDConnection;
+  lQry: TFDQuery;
+  lSSE: TMVCSSEWriter;
+  lJSONSerializer: IMVCSerializer;
+  lID: string;
+begin
+  // SSE is normally used for live/push feeds (chat, dashboards). Here the
+  // writer is driven by a DB dataset to illustrate the SSE wire format with
+  // any iterable source.
+  //
+  // Serializer for event payload: look up the JSON serializer explicitly
+  // rather than using the no-arg Serializer shorthand, which resolves to
+  // Serializer(GetContentType). Because [MVCProduces('text/event-stream')]
+  // sets the response ContentType to 'text/event-stream' before the action
+  // is invoked, the shorthand would raise "serializer not found" — no
+  // serializer is registered for that MIME type. The JSON serializer is
+  // the right choice anyway: SSE event data is JSON text; the outer
+  // event-stream framing is handled by TMVCSSEWriter.
+  lJSONSerializer := Serializer(TMVCMediaType.APPLICATION_JSON);
+  lQry := OpenPeopleCursor(lConn);
+  try
+    lSSE := TMVCSSEWriter.Create(Context);
+    try
+      while not lQry.Eof do
+      begin
+        if not lSSE.Connected then
+          Break;
+        lID := lQry.FieldByName('id').AsString;
+        lSSE.Send('person', lJSONSerializer.SerializeDataSetRecord(lQry), lID);
+        lQry.Next;
+      end;
+      if lSSE.Connected then
+        lSSE.Send('done', '');
+    finally
+      lSSE.Free;
+    end;
+  finally
+    lQry.Free;
+    lConn.Free;
+  end;
+end;
+
+procedure TStreamedArrayWriterController.StreamJSONL;
+var
+  lConn: TFDConnection;
+  lQry: TFDQuery;
+  lJSONL: TMVCJSONLWriter;
+  lJSONSerializer: IMVCSerializer;
+begin
+  // Same serializer lookup pattern as StreamSSE: [MVCProduces('application/
+  // x-ndjson')] sets the response ContentType before the action is invoked,
+  // so the no-arg Serializer shorthand would fail to find a registered
+  // serializer for that MIME type.
+  lJSONSerializer := Serializer(TMVCMediaType.APPLICATION_JSON);
+  lQry := OpenPeopleCursor(lConn);
+  try
+    lJSONL := TMVCJSONLWriter.Create(Context);
+    try
+      while not lQry.Eof do
+      begin
+        if not lJSONL.Connected then
+          Break;
+        lJSONL.Send(lJSONSerializer.SerializeDataSetRecord(lQry));
+        lQry.Next;
+      end;
+    finally
+      lJSONL.Free;
+    end;
+  finally
+    lQry.Free;
+    lConn.Free;
+  end;
+end;
+
+procedure TStreamedArrayWriterController.StreamCSV;
+var
+  lConn: TFDConnection;
+  lQry: TFDQuery;
+  lCSV: TMVCCSVWriter;
+  lPerson: TPerson;
+begin
+  // Header columns are derived from TPerson RTTI properties (TClass overload).
+  // Each person object is created, sent and freed inside the loop so only one
+  // TPerson and one CSV row are live at a time. TMVCCSVWriter uses its own
+  // internal CSV serializer, not the framework JSON serializer, so there is
+  // no serializer lookup involved and no content-type issue.
+  lCSV := TMVCCSVWriter.Create(Context, TPerson);
+  try
+    lQry := OpenPeopleCursor(lConn);
+    try
+      while not lQry.Eof do
+      begin
+        if not lCSV.Connected then
+          Break;
+        lPerson := TPerson.Create(
+          lQry.FieldByName('id').AsInteger,
+          lQry.FieldByName('full_name').AsString,
+          lQry.FieldByName('country').AsString,
+          lQry.FieldByName('age').AsInteger);
+        try
+          lCSV.Send(lPerson);
+        finally
+          lPerson.Free;
+        end;
+        lQry.Next;
+      end;
+    finally
+      lQry.Free;
+      lConn.Free;
+    end;
+  finally
+    lCSV.Free;
   end;
 end;
 
