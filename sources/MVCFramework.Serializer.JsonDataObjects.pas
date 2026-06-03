@@ -855,7 +855,7 @@ begin
           ftInteger, ftSmallint, ftShortint, ftByte:
             AJsonArray.Add(ADataSet.Fields[lField.I].AsInteger);
 
-          ftLargeint, ftAutoInc, ftLongword:
+          ftLargeint, ftAutoInc, ftLongword{$IF Declared(ftLargeUint)}, ftLargeUint{$ENDIF}:
             AJsonArray.Add(ADataSet.Fields[lField.I].AsLargeInt);
 {$IFDEF TOKYOORBETTER}
           ftGuid:
@@ -1029,7 +1029,7 @@ begin
           ftInteger, ftSmallint, ftShortint, ftByte, ftWord:
             AJSONObject.I[lFName] := ADataSet.Fields[lField.I].AsInteger;
 
-          ftLargeint, ftAutoInc, ftLongword:
+          ftLargeint, ftAutoInc, ftLongword{$IF Declared(ftLargeUint)}, ftLargeUint{$ENDIF}:
             AJSONObject.L[lFName] := ADataSet.Fields[lField.I].AsLargeInt;
 {$IFDEF TOKYOORBETTER}
           ftGuid:

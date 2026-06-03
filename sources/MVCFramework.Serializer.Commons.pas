@@ -1403,7 +1403,7 @@ begin
         end;
         // aRTTIField.SetValue(AObject, AField.AsString);
       end;
-    ftLargeInt, ftAutoInc:
+    ftLargeInt, ftAutoInc{$IF Declared(ftLargeUint)}, ftLargeUint{$ENDIF}:
       begin
         aRTTIField.SetValue(AObject, AField.AsLargeInt);
       end;

@@ -42,6 +42,16 @@ uses
   MVCFramework.Tests.Serializer.Entities,
   MVCFramework.Tests.Serializer.EntitiesModule,
   JsonDataObjects,
+  Data.DB,
+  FireDAC.Stan.Intf,
+  FireDAC.Stan.Option,
+  FireDAC.Stan.Param,
+  FireDAC.Stan.Error,
+  FireDAC.DatS,
+  FireDAC.Phys.Intf,
+  FireDAC.DApt.Intf,
+  FireDAC.Comp.DataSet,
+  FireDAC.Comp.Client,
   MVCFramework.DataSet.Utils;
 
 type
@@ -91,6 +101,9 @@ type
     procedure TestSerializeCollection;
     [Test]
     procedure TestSerializeDataSet;
+    [Test]
+    [Category('datasets')]
+    procedure TestSerializeDataSetWithLargeUint_Issue902;
     [Test]
     [Category('datasets')]
     procedure TestDataSetHelpers;
@@ -1288,6 +1301,64 @@ begin
   finally
     Dm.Free;
   end;
+end;
+
+type
+  // Holder used by TestSerializeDataSetWithLargeUint_Issue902. Public Int64
+  // field so MapDataSetFieldToRTTIField can reach it via RTTI.
+  TLargeUintHolder_Issue902 = class
+  public
+    BigId: Int64;
+  end;
+
+procedure TMVCTestSerializerJsonDataObjects.TestSerializeDataSetWithLargeUint_Issue902;
+// RAD Studio 13 added ftLargeUint (ord 52) for BIGINT UNSIGNED. FireDAC types
+// MySQL/MariaDB LAST_INSERT_ID() as ftLargeUint; before the fix the field
+// mapper/serializer only handled ftLargeInt/ftAutoInc and raised
+// "Unsupported FieldType (52)" on every auto-PK Insert read-back.
+{$IF Declared(ftLargeUint)}
+const
+  BIG_VALUE = Int64(4294967297); // 2^32 + 1: overflows 32-bit, fits Int64
+var
+  lMT: TFDMemTable;
+  lJSON: string;
+  lObj: TLargeUintHolder_Issue902;
+  lCtx: TRttiContext;
+  lField: TRttiField;
+{$ENDIF}
+begin
+{$IF Declared(ftLargeUint)}
+  lMT := TFDMemTable.Create(nil);
+  try
+    lMT.FieldDefs.Add('BigId', ftLargeUint);
+    lMT.FieldDefs.Add('Name', ftString, 50);
+    lMT.CreateDataSet;
+    lMT.Append;
+    lMT.FieldByName('BigId').AsLargeInt := BIG_VALUE;
+    lMT.FieldByName('Name').AsString := 'issue902';
+    lMT.Post;
+    lMT.First;
+
+    // Path A: DataSetToJsonObject (Serializer.JsonDataObjects) - used to raise.
+    lJSON := fSerializer.SerializeDataSetRecord(lMT);
+    Assert.Contains(lJSON, '4294967297', False, 'ftLargeUint not serialized');
+
+    // Path B: MapDataSetFieldToRTTIField (Serializer.Commons) - the exact
+    // code path hit by TMVCActiveRecord.Insert read-back of the PK.
+    lObj := TLargeUintHolder_Issue902.Create;
+    try
+      lField := lCtx.GetType(lObj.ClassType).GetField('BigId');
+      MapDataSetFieldToRTTIField(lMT.FieldByName('BigId'), lField, lObj);
+      Assert.AreEqual(BIG_VALUE, lObj.BigId, 'ftLargeUint not mapped to Int64');
+    finally
+      lObj.Free;
+    end;
+  finally
+    lMT.Free;
+  end;
+{$ELSE}
+  Assert.Pass('ftLargeUint not available on this Delphi version');
+{$ENDIF}
 end;
 
 procedure TMVCTestSerializerJsonDataObjects.TestSerializeDateTimeProperty;
