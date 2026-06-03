@@ -164,7 +164,10 @@ contains
   MVCFramework.Filters in '..\..\sources\MVCFramework.Filters.pas',
   MVCFramework.Middleware.StaticFiles in '..\..\sources\MVCFramework.Middleware.StaticFiles.pas',
   MVCFramework.OpenAPI3 in '..\..\sources\MVCFramework.OpenAPI3.pas',
-  MVCFramework.Middleware.OpenAPI3 in '..\..\sources\MVCFramework.Middleware.OpenAPI3.pas';
+  MVCFramework.Middleware.OpenAPI3 in '..\..\sources\MVCFramework.Middleware.OpenAPI3.pas',
+  MVCFramework.JWT.RefreshToken in '..\..\sources\MVCFramework.JWT.RefreshToken.pas',
+  MVCFramework.JWT.RefreshToken.Filters in '..\..\sources\MVCFramework.JWT.RefreshToken.Filters.pas',
+  MVCFramework.JWT.RefreshToken.ActiveRecord in '..\..\sources\MVCFramework.JWT.RefreshToken.ActiveRecord.pas';
 
 end.
 

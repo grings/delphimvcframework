@@ -228,6 +228,9 @@
         <DCCReference Include="..\..\sources\MVCFramework.Middleware.StaticFiles.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.OpenAPI3.pas"/>
         <DCCReference Include="..\..\sources\MVCFramework.Middleware.OpenAPI3.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.JWT.RefreshToken.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.JWT.RefreshToken.Filters.pas"/>
+        <DCCReference Include="..\..\sources\MVCFramework.JWT.RefreshToken.ActiveRecord.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

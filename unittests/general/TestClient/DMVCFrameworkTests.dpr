@@ -23,7 +23,6 @@ uses
   BOs in 'BOs.pas',
   TestServerControllerU in '..\TestServer\TestServerControllerU.pas',
   RESTAdapterTestsU in 'RESTAdapterTestsU.pas',
-  MVCFramework.Tests.WebModule1 in '..\RESTClient\MVCFramework.Tests.WebModule1.pas' {TestWebModule1: TWebModule},
   MVCFramework.Tests.RESTClient in '..\RESTClient\MVCFramework.Tests.RESTClient.pas',
   MVCFramework.Tests.AppController in '..\RESTClient\MVCFramework.Tests.AppController.pas',
   BusinessObjectsU in '..\..\..\samples\commons\BusinessObjectsU.pas',
@@ -50,7 +49,6 @@ uses
   MVCFramework.ActiveRecord in '..\..\..\sources\MVCFramework.ActiveRecord.pas',
   MVCFramework.ActiveRecordController in '..\..\..\sources\MVCFramework.ActiveRecordController.pas',
   ActiveRecordControllerTestU in 'ActiveRecordControllerTestU.pas',
-  ActiveRecordControllerWebModuleU in 'webmodules\ActiveRecordControllerWebModuleU.pas' {ActiveRecordControllerWebModule: TWebModule},
   ActiveRecordQuickWinsTestsU in 'ActiveRecordQuickWinsTestsU.pas',
   FDConnectionConfigU in '..\..\common\FDConnectionConfigU.pas',
   StandaloneServerTestU in 'StandaloneServerTestU.pas',
@@ -102,7 +100,6 @@ uses
   MVCFramework.SSE in '..\..\..\sources\MVCFramework.SSE.pas',
   MVCFramework.SSEClient in '..\..\..\sources\MVCFramework.SSEClient.pas',
   RangeMediaMiddlewareTestsU in 'RangeMediaMiddlewareTestsU.pas',
-  RangeMediaTestWebModuleU in 'webmodules\RangeMediaTestWebModuleU.pas' {RangeMediaTestWebModule: TWebModule},
   MVCFramework.Middleware.RangeMedia in '..\..\..\sources\MVCFramework.Middleware.RangeMedia.pas',
   MVCFramework.Server.Intf in '..\..\..\sources\MVCFramework.Server.Intf.pas',
   MVCFramework.Server.Indy in '..\..\..\sources\MVCFramework.Server.Indy.pas',
@@ -112,7 +109,11 @@ uses
   MVCFramework.WebBroker.Response in '..\..\..\sources\MVCFramework.WebBroker.Response.pas',
   ServerAbstractionTestU in 'ServerAbstractionTestU.pas',
   IndyDirectSingleFlushTestU in 'IndyDirectSingleFlushTestU.pas',
-  TestMinimalWebApiU in 'TestMinimalWebApiU.pas';
+  TestMinimalWebApiU in 'TestMinimalWebApiU.pas',
+  MVCFramework.JWT.RefreshToken in '..\..\..\sources\MVCFramework.JWT.RefreshToken.pas',
+  MVCFramework.JWT.RefreshToken.Filters in '..\..\..\sources\MVCFramework.JWT.RefreshToken.Filters.pas',
+  MVCFramework.JWT.RefreshToken.ActiveRecord in '..\..\..\sources\MVCFramework.JWT.RefreshToken.ActiveRecord.pas',
+  MVCFramework.Tests.RefreshTokenStore in 'MVCFramework.Tests.RefreshTokenStore.pas';
 
 {$R *.RES}
 
