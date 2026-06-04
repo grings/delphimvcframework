@@ -87,6 +87,7 @@ implementation
 uses
   MVCFramework.RESTClient,
   MVCFramework.RESTClient.Intf,
+  StandaloneServerTestU,
   StandAloneServerWebModuleTest;
 
 { TTestAbstractionController }
@@ -275,7 +276,7 @@ begin
       .SetName('CompatListener')
       .SetPort(TEST_COMPAT_PORT)
       .SetMaxConnections(512)
-      .SetWebModuleClass(TestWebModuleClass)
+      .SetEngineConfig(StandaloneEngineConfig())
   );
 
   Assert.IsTrue(Assigned(lListener), 'Listener should be assigned');

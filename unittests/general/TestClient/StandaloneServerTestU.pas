@@ -38,12 +38,38 @@ type
     procedure TestServerListenerAndClient;
   end;
 
+function StandaloneEngineConfig: TProc<TMVCEngine>;
+
 implementation
 
 uses
   MVCFramework.RESTClient,
   MVCFramework.RESTClient.Intf,
-  StandAloneServerWebModuleTest;
+  MVCFramework.Middleware.Authentication,
+  MVCFramework.Middleware.Session;
+
+function StandaloneEngineConfig: TProc<TMVCEngine>;
+begin
+  Result :=
+    procedure(AEngine: TMVCEngine)
+    begin
+      AEngine.AddController(TTestController,
+        function: TMVCController
+        begin
+          Result := TTestController.Create;
+        end);
+      AEngine.AddMiddleware(UseMemorySessionMiddleware(0));
+      AEngine.AddMiddleware(TMVCBasicAuthenticationMiddleware.Create(
+        TMVCDefaultAuthenticationHandler.New
+          .SetOnAuthentication(
+          procedure(const AUserName, APassword: string;
+            AUserRoles: TList<string>; var IsValid: Boolean;
+            const ASessionData: TDictionary<String, String>)
+          begin
+            IsValid := AUserName.Equals('dmvc') and APassword.Equals('123');
+          end)));
+    end;
+end;
 
 { TTestServerContainer }
 
@@ -68,7 +94,7 @@ begin
   // between tests in this fixture meant a failure in one left a socket
   // in TIME_WAIT that blocked the next test for ~60 seconds.
   lListener := TMVCListener.Create(TMVCListenerProperties.New.SetName('Listener1').SetPort(15100).SetMaxConnections(512)
-    .SetWebModuleClass(TestWebModuleClass));
+    .SetEngineConfig(StandaloneEngineConfig()));
 
   Assert.IsTrue(Assigned(lListener));
 
@@ -87,7 +113,7 @@ var
   LClient: IMVCRESTClient;
 begin
   lListener := TMVCListener.Create(TMVCListenerProperties.New.SetName('Listener1').SetPort(15200).SetMaxConnections(1024)
-    .SetWebModuleClass(TestWebModuleClass));
+    .SetEngineConfig(StandaloneEngineConfig()));
 
   Assert.IsTrue(Assigned(lListener));
 
@@ -111,10 +137,10 @@ begin
   LListenerCtx := TMVCListenersContext.Create;
 
   LListenerCtx.Add(TMVCListenerProperties.New.SetName('Listener2').SetPort(15300).SetMaxConnections(1024)
-    .SetWebModuleClass(TestWebModuleClass));
+    .SetEngineConfig(StandaloneEngineConfig()));
 
   LListenerCtx.Add(TMVCListenerProperties.New.SetName('Listener3').SetPort(15400).SetMaxConnections(1024)
-    .SetWebModuleClass(TestWebModuleClass2));
+    .SetEngineConfig(StandaloneEngineConfig()));
 
   Assert.IsTrue(Assigned(LListenerCtx.FindByName('Listener2')));
   Assert.IsTrue(Assigned(LListenerCtx.FindByName('Listener3')));

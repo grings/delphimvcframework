@@ -59,10 +59,15 @@ uses
   System.Classes, System.IOUtils, BOs, MVCFramework.ActiveRecord,
   System.SysUtils, System.Threading, System.Generics.Collections, Data.DB,
   FireDAC.Stan.Intf, ShellAPI, Winapi.Windows, FDConnectionConfigU,
-  MVCFramework.Serializer.JsonDataObjects,
-  MVCFramework.Server.Impl, ActiveRecordControllerWebModuleU,
+  MVCFramework, MVCFramework.Serializer.JsonDataObjects,
+  MVCFramework.Server.Impl,
+  MVCFramework.Middleware.Session, MVCFramework.Middleware.ActiveRecord,
+  MVCFramework.ActiveRecordController,
   MVCFramework.RESTClient, JsonDataObjects, System.StrUtils,
   MVCFramework.Commons;
+
+const
+  AR_CONTROLLER_CON_DEF_NAME = 'AR_CONTROLLER_CON_DEF_NAME';
 
 
 { TTestActiveRecordController }
@@ -166,7 +171,23 @@ begin
       .SetName('Listener1')
       .SetPort(5000)
       .SetMaxConnections(512)
-      .SetWebModuleClass(TActiveRecordControllerWebModule));
+      .SetConfigAction(
+        procedure(Config: TMVCConfig)
+        begin
+          Config[TMVCConfigKey.DefaultContentType] := TMVCConstants.DEFAULT_CONTENT_TYPE;
+          Config[TMVCConfigKey.DefaultContentCharset] := TMVCConstants.DEFAULT_CONTENT_CHARSET;
+          Config[TMVCConfigKey.AllowUnhandledAction] := 'false';
+          Config[TMVCConfigKey.DefaultViewFileExtension] := 'html';
+          Config[TMVCConfigKey.ViewPath] := 'templates';
+          Config[TMVCConfigKey.ExposeServerSignature] := 'true';
+        end)
+      .SetEngineConfig(
+        procedure(AEngine: TMVCEngine)
+        begin
+          AEngine.AddMiddleware(UseMemorySessionMiddleware(0));
+          AEngine.AddMiddleware(TMVCActiveRecordMiddleware.Create(AR_CONTROLLER_CON_DEF_NAME));
+          AEngine.AddController(TMVCActiveRecordController, '/api/entities');
+        end));
   fListener.Start;
 
   fClient := TMVCRESTClient.New.BaseURL('http://localhost', 5000);

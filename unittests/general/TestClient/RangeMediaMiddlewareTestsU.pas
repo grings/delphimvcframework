@@ -164,7 +164,8 @@ implementation
 
 uses
   System.Net.URLClient,
-  RangeMediaTestWebModuleU;
+  MVCFramework,
+  MVCFramework.Middleware.RangeMedia;
 
 { Helpers }
 
@@ -266,7 +267,11 @@ begin
       .SetName('RangeMediaTest')
       .SetPort(TEST_PORT)
       .SetMaxConnections(32)
-      .SetWebModuleClass(RangeMediaTestWebModuleClass)
+      .SetEngineConfig(
+        procedure(AEngine: TMVCEngine)
+        begin
+          AEngine.AddMiddleware(UseRangeMediaMiddleware('/testmedia', 'testmedia_tmp'));
+        end)
   );
   FListener.Start;
 end;

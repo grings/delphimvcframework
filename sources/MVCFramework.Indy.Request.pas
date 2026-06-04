@@ -351,7 +351,7 @@ begin
           lEqPos := Pos('=', lPair);
           if lEqPos > 0 then
           begin
-            lName := TIdURI.URLDecode(Copy(lPair, 1, lEqPos - 1));
+            lName := TIdURI.URLDecode(StringReplace(Copy(lPair, 1, lEqPos - 1), '+', ' ', [rfReplaceAll]));
             if Names.IndexOf(lName) = -1 then
               Names.Add(lName);
           end;
@@ -434,8 +434,8 @@ begin
           lEqPos := Pos('=', lPair);
           if lEqPos > 0 then
           begin
-            lName := TIdURI.URLDecode(Copy(lPair, 1, lEqPos - 1));
-            lValue := TIdURI.URLDecode(Copy(lPair, lEqPos + 1, MaxInt));
+            lName := TIdURI.URLDecode(StringReplace(Copy(lPair, 1, lEqPos - 1), '+', ' ', [rfReplaceAll]));
+            lValue := TIdURI.URLDecode(StringReplace(Copy(lPair, lEqPos + 1, MaxInt), '+', ' ', [rfReplaceAll]));
             if SameText(lName, AParamName) then
               lResult.Add(lValue);
           end;
@@ -476,8 +476,8 @@ begin
           lEqPos := Pos('=', lPair);
           if lEqPos > 0 then
           begin
-            lName := TIdURI.URLDecode(Copy(lPair, 1, lEqPos - 1));
-            lValue := TIdURI.URLDecode(Copy(lPair, lEqPos + 1, MaxInt));
+            lName := TIdURI.URLDecode(StringReplace(Copy(lPair, 1, lEqPos - 1), '+', ' ', [rfReplaceAll]));
+            lValue := TIdURI.URLDecode(StringReplace(Copy(lPair, lEqPos + 1, MaxInt), '+', ' ', [rfReplaceAll]));
             FContentFields.AddOrSetValue(LowerCase(lName), lValue);
           end;
         end;
@@ -563,8 +563,8 @@ begin
           lEqPos := Pos('=', lPair);
           if lEqPos > 0 then
           begin
-            lName := TIdURI.URLDecode(Copy(lPair, 1, lEqPos - 1));
-            lValue := TIdURI.URLDecode(Copy(lPair, lEqPos + 1, MaxInt));
+            lName := TIdURI.URLDecode(StringReplace(Copy(lPair, 1, lEqPos - 1), '+', ' ', [rfReplaceAll]));
+            lValue := TIdURI.URLDecode(StringReplace(Copy(lPair, lEqPos + 1, MaxInt), '+', ' ', [rfReplaceAll]));
             FCachedContentFieldsText.Add(lName + '=' + lValue);
           end;
         end;
@@ -697,6 +697,35 @@ begin
   Result := FCookies.Values[AName];
 end;
 
+function IndexOfBytes(const AHaystack, ANeedle: TBytes; const AStart: Integer): Integer;
+var
+  I, J: Integer;
+  lHayLen, lNeedleLen: Integer;
+  lMatch: Boolean;
+begin
+  Result := -1;
+  lHayLen := Length(AHaystack);
+  lNeedleLen := Length(ANeedle);
+  if (lNeedleLen = 0) or (lNeedleLen > lHayLen) then
+    Exit;
+  I := AStart;
+  if I < 0 then
+    I := 0;
+  while I <= lHayLen - lNeedleLen do
+  begin
+    lMatch := True;
+    for J := 0 to lNeedleLen - 1 do
+      if AHaystack[I + J] <> ANeedle[J] then
+      begin
+        lMatch := False;
+        Break;
+      end;
+    if lMatch then
+      Exit(I);
+    Inc(I);
+  end;
+end;
+
 procedure TMVCIndyDirectRequest.ParseMultipartContent;
 //
 // Strategy: the Indy Direct backend has no WebBroker layer parsing the body
@@ -705,7 +734,14 @@ procedure TMVCIndyDirectRequest.ParseMultipartContent;
 //   - FFiles: parts that carry a filename="..." attribute
 //   - FContentFields / FCachedContentFieldsText: text-only parts (i.e. parts
 //     without a filename), so ContentParam('field') returns the value
-//     (issue #758 — older fix populated only FFiles).
+//     (issue #758 - older fix populated only FFiles).
+//
+// The body is walked at the BYTE level (TBytes), never round-tripped through a
+// UTF-8 string: a multipart payload can carry arbitrary binary file parts
+// (images, zips, ...) and decoding those as UTF-8 corrupts the bytes (invalid
+// sequences become U+FFFD) and changes their length, which both fails the
+// upload and previously raised a 500. Only the header section and text-only
+// field values - which are text by definition - are decoded to string.
 //
 // Idempotent via FMultipartParsed: GetFiles, GetContentFields and
 // DoGetContentFieldsText all call this method, but the body is split exactly
@@ -716,18 +752,16 @@ procedure TMVCIndyDirectRequest.ParseMultipartContent;
 var
   lBoundary: string;
   lContentType: string;
-  lRawStr: string;
-  lParts: TArray<string>;
-  I: Integer;
-  lPart: string;
-  lHeaderSection, lBodySection: string;
-  lSplitPos: Integer;
+  lRaw: TBytes;
+  lBoundaryBytes: TBytes;
+  lCRLF2: TBytes;
+  lRawLen, lBoundaryLen: Integer;
+  lPos, lPartStart, lPartEnd, lNextBoundary: Integer;
+  lHeaderEnd, lBodyStart, lBodyLen: Integer;
+  lHeaderSection, lFieldValue: string;
   lFileName, lFieldName, lPartContentType: string;
   lBodyStream: TMemoryStream;
-  lBodyBytes: TBytes;
-  lBoundaryPos: Integer;
-  lFnPos: Integer;
-  lNamePos: Integer;
+  lBoundaryPos, lFnPos, lNamePos: Integer;
 begin
   if FMultipartParsed then
     Exit;
@@ -754,41 +788,58 @@ begin
   if lBoundary = '' then
     Exit;
 
-  // Read raw content
+  // Read raw content (bytes, never decoded as a whole)
   LoadRawContent;
-  if Length(FCachedRawContent) = 0 then
+  lRaw := FCachedRawContent;
+  lRawLen := Length(lRaw);
+  if lRawLen = 0 then
     Exit;
-  lRawStr := TEncoding.UTF8.GetString(FCachedRawContent);
 
-  // Split by boundary
-  lParts := lRawStr.Split(['--' + lBoundary]);
+  lBoundaryBytes := TEncoding.ASCII.GetBytes('--' + lBoundary);
+  lBoundaryLen := Length(lBoundaryBytes);
+  lCRLF2 := TEncoding.ASCII.GetBytes(#13#10#13#10);
 
-  for I := 1 to Length(lParts) - 1 do // skip first empty part
+  lPos := IndexOfBytes(lRaw, lBoundaryBytes, 0);
+  while lPos >= 0 do
   begin
-    lPart := lParts[I];
-    if lPart.StartsWith('--') then
-      Continue; // end boundary marker
+    lPartStart := lPos + lBoundaryLen;
 
-    // Split headers from body (separated by double CRLF)
-    lSplitPos := Pos(#13#10#13#10, lPart);
-    if lSplitPos = 0 then
+    // Closing boundary marker "--boundary--"
+    if (lPartStart + 1 < lRawLen) and (lRaw[lPartStart] = Byte('-')) and (lRaw[lPartStart + 1] = Byte('-')) then
+      Break;
+
+    // Skip the CRLF that follows the boundary line
+    if (lPartStart + 1 < lRawLen) and (lRaw[lPartStart] = 13) and (lRaw[lPartStart + 1] = 10) then
+      Inc(lPartStart, 2);
+
+    lNextBoundary := IndexOfBytes(lRaw, lBoundaryBytes, lPartStart);
+    if lNextBoundary < 0 then
+      lPartEnd := lRawLen
+    else
+      lPartEnd := lNextBoundary;
+
+    // Header/body separator (double CRLF) inside this part
+    lHeaderEnd := IndexOfBytes(lRaw, lCRLF2, lPartStart);
+    if (lHeaderEnd < 0) or (lHeaderEnd >= lPartEnd) then
+    begin
+      lPos := lNextBoundary;
       Continue;
+    end;
 
-    lHeaderSection := Trim(Copy(lPart, 1, lSplitPos - 1));
-    lBodySection := Copy(lPart, lSplitPos + 4, MaxInt);
-    // Remove leading CRLF (introduced by Split when boundary is preceded by CRLF)
-    if lBodySection.StartsWith(#13#10) then
-      lBodySection := Copy(lBodySection, 3, MaxInt);
-    // Remove trailing CRLF
-    if lBodySection.EndsWith(#13#10) then
-      lBodySection := Copy(lBodySection, 1, Length(lBodySection) - 2);
+    lHeaderSection := TEncoding.UTF8.GetString(lRaw, lPartStart, lHeaderEnd - lPartStart);
+    lBodyStart := lHeaderEnd + 4;
+    lBodyLen := lPartEnd - lBodyStart;
+    // Strip the trailing CRLF that precedes the next boundary delimiter
+    if (lBodyLen >= 2) and (lRaw[lBodyStart + lBodyLen - 2] = 13) and (lRaw[lBodyStart + lBodyLen - 1] = 10) then
+      Dec(lBodyLen, 2);
+    if lBodyLen < 0 then
+      lBodyLen := 0;
 
     // Parse Content-Disposition for filename and field name
     lFileName := '';
     lFieldName := '';
     lPartContentType := 'application/octet-stream';
 
-    // Extract filename
     lFnPos := Pos('filename="', lHeaderSection);
     if lFnPos > 0 then
     begin
@@ -796,7 +847,6 @@ begin
       lFileName := Copy(lFileName, 1, Pos('"', lFileName) - 1);
     end;
 
-    // Extract field name
     lNamePos := Pos('name="', lHeaderSection);
     if lNamePos > 0 then
     begin
@@ -806,24 +856,27 @@ begin
 
     if lFileName <> '' then
     begin
-      // File part
+      // File part - copy raw bytes verbatim, no encoding round-trip
       lBodyStream := TMemoryStream.Create;
-      lBodyBytes := TEncoding.UTF8.GetBytes(lBodySection);
-      if Length(lBodyBytes) > 0 then
-        lBodyStream.WriteBuffer(lBodyBytes[0], Length(lBodyBytes));
+      if lBodyLen > 0 then
+        lBodyStream.WriteBuffer(lRaw[lBodyStart], lBodyLen);
       lBodyStream.Position := 0;
       FFiles.Add(TMVCIndyRequestFile.Create(lFieldName, lFileName, lPartContentType, lBodyStream));
     end
     else if lFieldName <> '' then
     begin
-      // Text field part - populate ContentFields so ContentParam returns the value
+      // Text field part - decode the (text) value and populate ContentFields
+      // so ContentParam('field') returns the value
+      lFieldValue := TEncoding.UTF8.GetString(lRaw, lBodyStart, lBodyLen);
       if not Assigned(FContentFields) then
         FContentFields := TDictionary<string, string>.Create;
       if not Assigned(FCachedContentFieldsText) then
         FCachedContentFieldsText := TStringList.Create;
-      FContentFields.AddOrSetValue(LowerCase(lFieldName), lBodySection);
-      FCachedContentFieldsText.Add(lFieldName + '=' + lBodySection);
+      FContentFields.AddOrSetValue(LowerCase(lFieldName), lFieldValue);
+      FCachedContentFieldsText.Add(lFieldName + '=' + lFieldValue);
     end;
+
+    lPos := lNextBoundary;
   end;
 end;
 

@@ -55,6 +55,43 @@ client side. There is no runtime flag to restore the old behaviour -
 the sentinel was lossy and breaks round-trips, so a real nullable
 type is the only correct alternative going forward.
 
+**3. `TMVCListener` is now an Indy Direct server - no WebBroker dependency**
+
+`TMVCListener` / `TMVCListenerProperties` (`MVCFramework.Server`) previously
+required a `TWebModuleClass` and ran on `TIdHTTPWebBrokerBridge`. They now host
+a `TMVCEngine` on the direct Indy backend (`TMVCIndyServer`) with no WebBroker
+layer. The configuration API changed accordingly:
+
+- Removed: `SetWebModuleClass` / `WebModuleClass`.
+- Removed: `SetSSLOptions` and the SSL listener properties. TLS belongs to the
+  server backend, not to `TMVCListener`.
+- Added: `SetConfigAction(TProc<TMVCConfig>)` - sets engine config keys, applied
+  while the engine is being created.
+- Added: `SetEngineConfig(TProc<TMVCEngine>)` - wires controllers and
+  middleware, applied after the engine is created.
+
+Migration: move the body of the old WebModule's `WebModuleCreate` (the
+`AddController` / `AddMiddleware` calls) into a `SetEngineConfig` proc, and any
+`TMVCConfig` key assignments into `SetConfigAction`.
+
+Before:
+```pascal
+TMVCListener.Create(TMVCListenerProperties.New
+  .SetName('App').SetPort(8080)
+  .SetWebModuleClass(TMyWebModule));
+```
+After:
+```pascal
+TMVCListener.Create(TMVCListenerProperties.New
+  .SetName('App').SetPort(8080)
+  .SetEngineConfig(
+    procedure(AEngine: TMVCEngine)
+    begin
+      AEngine.AddController(TMyController);
+      AEngine.AddMiddleware(UseMemorySessionMiddleware(0));
+    end));
+```
+
 ### Added
 
 - **Pluggable HTTP server backends** behind a new `IMVCServer` interface
@@ -155,6 +192,17 @@ type is the only correct alternative going forward.
   instead of `{braces}`. See **BREAKING CHANGES** above for migration.
 - `TDate` / `TDateTime` / `TTime` zero no longer serialises as JSON
   `null`. See **BREAKING CHANGES** above for migration.
+
+### Deprecated
+
+- **`TMVCListener` / `TMVCListenerProperties` / `TMVCListenersContext`**
+  (`MVCFramework.Server`) are deprecated and **will be removed in 4.0**.
+  After the Indy Direct conversion they are a thin wrapper over the
+  `IMVCServer` abstraction and expose strictly less (Indy-only, no HTTPS,
+  only `MaxConnections`). Build servers through `TMVCServerFactory` /
+  `IMVCServer` (`MVCFramework.Server.Factory`) instead, which also gives you
+  the HTTP.sys / WebBroker backends and built-in HTTPS. Existing code keeps
+  compiling with a deprecation warning until you migrate.
 
 ### Fixed
 

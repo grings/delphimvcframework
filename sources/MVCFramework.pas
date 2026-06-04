@@ -2605,7 +2605,7 @@ begin
   FMiddlewares := TList<IMVCMiddleware>.Create;
   FControllers := TObjectList<TMVCControllerDelegate>.Create(True);
   FSavedOnBeforeDispatch := nil;
-  if FWebModule <> nil then
+  if (FWebModule <> nil) and (WebRequestHandler <> nil) then
   begin
     WebRequestHandler.CacheConnections := True;
     WebRequestHandler.MaxConnections := 4096;
