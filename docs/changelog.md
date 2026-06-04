@@ -120,6 +120,18 @@ TMVCListener.Create(TMVCListenerProperties.New
   by adding `uses MVCFramework.Server.HTTPS.TaurusTLS`) so TLS setup is
   inside the server, not in the caller.
 
+- **JWT refresh token** (`MVCFramework.JWT.RefreshToken`, additive and
+  opt-in). An OAuth2-style refresh token layer on top of the existing
+  `TMVCJWTAuthenticationMiddleware`: short-lived access tokens plus a
+  long-lived, revocable refresh token with rotation and reuse-detection.
+  The refresh token is an opaque random string (not a JWT); the store
+  keeps only its SHA-256 hash. Presenting an already-rotated token
+  revokes the whole family (replay defence). Ships with a pluggable
+  store interface, an `TMVCActiveRecord`-backed implementation
+  (`MVCFramework.JWT.RefreshToken.ActiveRecord`), endpoint filters
+  (`MVCFramework.JWT.RefreshToken.Filters`) and a sample
+  (`samples/jsonwebtoken_refreshtoken`). See `docs/jwt-refresh-token.md`.
+
 - **Streaming JSON serializer fast path** (`MVCFramework.Serializer.Streaming`)
   for `OKResponse(TObject)` / `OKResponse(TObjectList<T>)`. Writes JSON
   directly to the response stream via `System.JSON.Writers.TJsonTextWriter`
