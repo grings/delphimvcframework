@@ -173,6 +173,25 @@ begin
     begin
       Result := Ok(Format('term="%s" page=%d size=%d', [Q.Term, Q.Page, Q.PageSize]));
     end);
+
+  // 6. FILE UPLOAD. A TMVCFormFile argument binds the first multipart file.
+  //    A record can mix [MVCFromFile] with [MVCFromContentField] text fields.
+  ARoot.MapPost<TMVCFormFile>('/upload',
+    function (Doc: TMVCFormFile): IMVCResponse
+    begin
+      if Doc = nil then
+        Result := BadRequest('no file uploaded')
+      else
+        Result := Ok(Format('received "%s" (%d bytes, %s)',
+          [Doc.FileName, Doc.Size, Doc.ContentType]));
+    end).WithSummary('Upload a file (multipart/form-data)');
+
+  // 7. QUERY ARRAY. Repeated ?tag= keys bind to TArray<string>.
+  ARoot.MapGet<TTagSearch>('/tags',
+    function (Q: TTagSearch): IMVCResponse
+    begin
+      Result := Ok(Format('%d tag(s)', [Length(Q.Tags)]));
+    end);
 end;
 
 end.

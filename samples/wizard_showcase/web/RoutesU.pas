@@ -243,6 +243,16 @@ begin
       ViewData['theme'] := Info.Theme;
       Result := RenderView('pages/context');
     end);
+
+  // 7. WILDCARD. ($slug:*) captures the rest of the path (slashes included),
+  //    handy for doc trees, virtual paths, slugs with separators.
+  lWeb.MapGet<TWebContext, string>('/docs/($slug:*)',
+    function (Ctx: TWebContext; Slug: string): IMVCResponse
+    begin
+      ViewData['ispage'] := not Ctx.Request.IsHTMX;
+      ViewData['slug'] := Slug;
+      Result := RenderView('pages/docs');
+    end);
 end;
 
 end.

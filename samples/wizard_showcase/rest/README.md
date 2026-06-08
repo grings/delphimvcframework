@@ -18,6 +18,8 @@ Open `MinimalAPIShowcase.dpr` in Delphi, press F9. Browser:
 | `GET /people/(id:int)` | **primitive** Integer bound from a route segment |
 | `POST /people` | **class body JSON** + auto-validation via `TMVCValidatable` (`TPersonInput` carries `[MVCRequired]`, `[MVCMinLength]`, `[MVCEmail]`) |
 | `GET /search` | **record** + `[MVCFromQueryString]` with per-field default values (`TSearchQuery`) |
+| `POST /upload` | **file upload** — a `TMVCFormFile` argument binds the first multipart file (`FileName` / `Size` / `ContentType`) |
+| `GET /tags` | **typed array from query** — repeated `?tag=` keys bind to `TArray<string>` (`TTagSearch`) |
 
 The `/people/*` subtree is mounted via
 `Prefix('/people').Use(LogFilter())` — every route under that prefix

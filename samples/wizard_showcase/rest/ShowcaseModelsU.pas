@@ -58,6 +58,12 @@ type
     [MVCFromQueryString('size', '20')] PageSize: Integer;
   end;
 
+  // Repeated query keys bind to a typed dynamic array: ?tag=a&tag=b&tag=c ->
+  // Tags = ['a','b','c']. Works for TArray<string>, TArray<Integer>, etc.
+  TTagSearch = record
+    [MVCFromQueryString('tag')] Tags: TArray<string>;
+  end;
+
 implementation
 
 end.

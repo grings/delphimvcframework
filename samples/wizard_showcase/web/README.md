@@ -21,6 +21,7 @@ endpoint with try-it links.
 | `GET /signup` | form view, no binding |
 | `POST /signup` | **record** + `[MVCFromContentField]` including `TArray<string>` (multi-checkbox `interests`) |
 | `GET /context` | **record** + `[MVCFromHeader]` + `[MVCFromCookie]` (with cookie round-trip) |
+| `GET /docs/(slug:*)` | **wildcard** — a trailing `($slug:*)` segment captures the rest of the path (slashes included) as one `string` |
 
 Session is set up via `MemorySession(30)` filter on the public group;
 `/people/*` adds a logging filter via `.Use(LogFilter())`.
