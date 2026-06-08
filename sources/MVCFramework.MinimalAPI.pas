@@ -49,14 +49,22 @@
 //
 // Arguments are bound by type:
 //   * TWebContext            -> request context
-//   * Interface in container -> DI service
-//   * Class in container     -> DI service
-//   * Class not in container -> body JSON (POST/PUT/PATCH) or query (GET/DELETE)
+//   * Interface in container -> DI service (the ONLY way to inject a service)
+//   * TMVCFormFile           -> first uploaded multipart file (nil if none)
+//   * Class                  -> request body JSON (POST/PUT/PATCH) or, for
+//                               GET/DELETE, public writable properties mapped
+//                               from the query string. A class registered as
+//                               group data (Prefix<T>) takes precedence.
+//                               NOTE: concrete classes are NEVER resolved from
+//                               the DI container — use an interface for DI.
 //   * Record                 -> hybrid binding via [MVCFromBody]/[MVCFromQueryString]/
-//                               [MVCFromHeader]/[MVCFromCookie]/[MVCFromContentField]
-//                               on fields
+//                               [MVCFromHeader]/[MVCFromCookie]/[MVCFromContentField]/
+//                               [MVCFromFile] on fields. Records are validated
+//                               if any field carries validation attributes.
 //   * Primitive (Integer, Int64, string, Boolean, Double, TGUID, TDateTime...)
-//                            -> route param (if present), else query string
+//                            -> route param (if present), else query string.
+//                               A trailing ($name:*) route segment captures the
+//                               rest of the path (slashes included) as a string.
 //
 // Up to 4 generic arguments per Map call.
 //
@@ -87,6 +95,34 @@ type
   TMVCRouteKind = (rkApi, rkWeb);
 
   EMVCMinimalAPI = class(EMVCException);
+
+  // -------------------------------------------------------------------------
+  // Uploaded multipart/form-data file, surfaced to Minimal API handlers.
+  // Non-owning view over the request-owned part: the content stream is owned by
+  // TWebContext.Request and stays valid for the request lifetime. Do NOT free
+  // the stream. Bind by declaring a TMVCFormFile argument (first uploaded file)
+  // or a TMVCFormFile / TArray<TMVCFormFile> record field with optional
+  // [MVCFromFile('field')].
+  // -------------------------------------------------------------------------
+  TMVCFormFile = class
+  strict private
+    fFieldName: string;
+    fFileName: string;
+    fContentType: string;
+    fStream: TStream;
+  public
+    constructor Create(const AFieldName, AFileName, AContentType: string;
+      AStream: TStream);
+    property FieldName: string read fFieldName;
+    property FileName: string read fFileName;
+    property ContentType: string read fContentType;
+    function Size: Int64;
+    // Request-owned content stream, seeked to 0. Do not free.
+    function ContentStream: TStream;
+    function ContentAsBytes: TBytes;
+    function ContentAsString(const AEncoding: TEncoding = nil): string;
+    procedure SaveToFile(const APath: string);
+  end;
 
   // -------------------------------------------------------------------------
   // Handler types: function returning IMVCResponse with 0..4 typed arguments.
@@ -629,6 +665,7 @@ uses
   System.Diagnostics,
   System.StrUtils,
   System.SyncObjs,
+  Web.HTTPApp,
   MVCFramework.Router,
   MVCFramework.Rtti.Utils,
   MVCFramework.Serializer.Commons,
@@ -702,6 +739,118 @@ begin
   Result := BuildHTMLResponse(lHtml);
 end;
 
+
+{ -------------------------------------------------------------------------- }
+{ TMVCFormFile                                                               }
+{ -------------------------------------------------------------------------- }
+
+constructor TMVCFormFile.Create(const AFieldName, AFileName, AContentType: string;
+  AStream: TStream);
+begin
+  inherited Create;
+  fFieldName := AFieldName;
+  fFileName := AFileName;
+  fContentType := AContentType;
+  fStream := AStream;
+end;
+
+function TMVCFormFile.Size: Int64;
+begin
+  if fStream = nil then
+    Exit(0);
+  Result := fStream.Size;
+end;
+
+function TMVCFormFile.ContentStream: TStream;
+begin
+  if fStream <> nil then
+    fStream.Position := 0;
+  Result := fStream;
+end;
+
+function TMVCFormFile.ContentAsBytes: TBytes;
+begin
+  SetLength(Result, 0);
+  if (fStream = nil) or (fStream.Size = 0) then
+    Exit;
+  fStream.Position := 0;
+  SetLength(Result, fStream.Size);
+  fStream.ReadBuffer(Result[0], fStream.Size);
+end;
+
+function TMVCFormFile.ContentAsString(const AEncoding: TEncoding): string;
+var
+  lEnc: TEncoding;
+  lBytes: TBytes;
+begin
+  if AEncoding = nil then
+    lEnc := TEncoding.UTF8
+  else
+    lEnc := AEncoding;
+  lBytes := ContentAsBytes;
+  Result := lEnc.GetString(lBytes);
+end;
+
+procedure TMVCFormFile.SaveToFile(const APath: string);
+var
+  lFile: TFileStream;
+begin
+  lFile := TFileStream.Create(APath, fmCreate);
+  try
+    if fStream <> nil then
+    begin
+      fStream.Position := 0;
+      lFile.CopyFrom(fStream, fStream.Size);
+    end;
+  finally
+    lFile.Free;
+  end;
+end;
+
+// Wrap a request-owned file part as a non-owning TMVCFormFile.
+function WrapRequestFile(const AReqFile: TAbstractWebRequestFile): TMVCFormFile;
+begin
+  Result := TMVCFormFile.Create(AReqFile.FieldName, AReqFile.FileName,
+    AReqFile.ContentType, AReqFile.Stream);
+end;
+
+// Return uploaded files whose FieldName matches AFieldName (case-insensitive).
+// AFieldName = '' returns every uploaded file.
+function FilesMatching(const AContext: TWebContext;
+  const AFieldName: string): TArray<TAbstractWebRequestFile>;
+var
+  lFiles: TAbstractWebRequestFiles;
+  I: Integer;
+  lFile: TAbstractWebRequestFile;
+begin
+  SetLength(Result, 0);
+  lFiles := AContext.Request.Files;
+  if lFiles = nil then
+    Exit;
+  for I := 0 to lFiles.Count - 1 do
+  begin
+    lFile := lFiles[I];
+    if (AFieldName = '') or SameText(lFile.FieldName, AFieldName) then
+      Result := Result + [lFile];
+  end;
+end;
+
+// Convert a list of raw string values into a typed dynamic-array TValue whose
+// element type comes from AArrayType (e.g. TArray<string>, TArray<Integer>).
+function StringArrayToTypedArray(const AValues: TArray<string>;
+  const AArrayType: TRttiType): TValue;
+var
+  lDyn: TRttiDynamicArrayType;
+  lElems: TArray<TValue>;
+  I: Integer;
+begin
+  lDyn := AArrayType as TRttiDynamicArrayType;
+  SetLength(lElems, Length(AValues));
+  for I := 0 to High(AValues) do
+    lElems[I] := TMVCMinimalArgResolver.ConvertStringTo(AValues[I],
+      lDyn.ElementType.Handle);
+  Result := TValue.FromArray(AArrayType.Handle, lElems);
+end;
 
 { -------------------------------------------------------------------------- }
 { TMVCMinimalRenderer                                                        }
@@ -998,8 +1147,9 @@ function MatchPath(const APattern, APath: string;
   const AParamsTable: TMVCRequestParamsTable): Boolean;
 var
   lPatternSegs, lPathSegs: TArray<string>;
-  I, lColon: Integer;
-  lPSeg, lASeg, lInner, lParamName, lConstraint: string;
+  I, J, lColon: Integer;
+  lPSeg, lASeg, lInner, lParamName, lConstraint, lRest, lWildName: string;
+  lWildcard: Boolean;
 begin
   // Segment matcher with optional constraints. Syntax:
   //   ($name)               unconstrained capture
@@ -1013,12 +1163,46 @@ begin
   lPatternSegs := APattern.Trim(['/']).Split(['/']);
   lPathSegs := APath.Trim(['/']).Split(['/']);
 
-  if Length(lPatternSegs) <> Length(lPathSegs) then
+  // Detect a trailing catch-all segment of the form ($name:*). It must be the
+  // LAST pattern segment; it captures every remaining path segment (slashes
+  // included) into the named param, and matches an empty tail.
+  lWildcard := False;
+  lWildName := '';
+  if Length(lPatternSegs) > 0 then
+  begin
+    lPSeg := lPatternSegs[High(lPatternSegs)];
+    if lPSeg.StartsWith('($') and lPSeg.EndsWith(':*)') then
+    begin
+      lWildcard := True;
+      lWildName := Copy(lPSeg, 3, Length(lPSeg) - 5); // strip '($' and ':*)'
+    end;
+  end;
+
+  if lWildcard then
+  begin
+    if Length(lPathSegs) < Length(lPatternSegs) - 1 then
+      Exit(False);
+  end
+  else if Length(lPatternSegs) <> Length(lPathSegs) then
     Exit(False);
 
   for I := 0 to High(lPatternSegs) do
   begin
     lPSeg := lPatternSegs[I];
+
+    if lWildcard and (I = High(lPatternSegs)) then
+    begin
+      lRest := '';
+      for J := I to High(lPathSegs) do
+      begin
+        if lRest <> '' then
+          lRest := lRest + '/';
+        lRest := lRest + lPathSegs[J];
+      end;
+      AParamsTable.AddOrSetValue(lWildName, lRest);
+      Break;
+    end;
+
     lASeg := lPathSegs[I];
     if lPSeg.StartsWith('($') and lPSeg.EndsWith(')') then
     begin
@@ -1181,6 +1365,11 @@ var
   lBound: Boolean;
   lBodyObj: TObject;
   lSerializer: IMVCSerializer;
+  lFileFieldName: string;
+  lMatchedFiles: TArray<TAbstractWebRequestFile>;
+  lFormFile: TMVCFormFile;
+  lFormFileArr: TArray<TMVCFormFile>;
+  lFileIdx: Integer;
 begin
   lCtx := TRttiContext.Create;
   try
@@ -1195,6 +1384,40 @@ begin
 
     for lField in lType.GetFields do
     begin
+      // ---- file binding: TMVCFormFile / TArray<TMVCFormFile> fields ----
+      if (lField.FieldType.Handle = TypeInfo(TMVCFormFile))
+         or SameText(lField.FieldType.QualifiedName,
+              'System.TArray<MVCFramework.MinimalAPI.TMVCFormFile>') then
+      begin
+        lFileFieldName := lField.Name;
+        for lAttr in lField.GetAttributes do
+          if (lAttr is MVCFromFileAttribute)
+             and (MVCFromFileAttribute(lAttr).ParamName <> '') then
+            lFileFieldName := MVCFromFileAttribute(lAttr).ParamName;
+
+        lMatchedFiles := FilesMatching(AContext, lFileFieldName);
+        if lField.FieldType.Handle = TypeInfo(TMVCFormFile) then
+        begin
+          if Length(lMatchedFiles) > 0 then
+          begin
+            lFormFile := WrapRequestFile(lMatchedFiles[0]);
+            ABoundObjects.Add(lFormFile);
+            lField.SetValue(lAddr, lFormFile);
+          end;
+        end
+        else
+        begin
+          SetLength(lFormFileArr, Length(lMatchedFiles));
+          for lFileIdx := 0 to High(lMatchedFiles) do
+          begin
+            lFormFileArr[lFileIdx] := WrapRequestFile(lMatchedFiles[lFileIdx]);
+            ABoundObjects.Add(lFormFileArr[lFileIdx]);
+          end;
+          lField.SetValue(lAddr, TValue.From<TArray<TMVCFormFile>>(lFormFileArr));
+        end;
+        Continue; // field handled; skip the [MVCFrom*] dispatch below
+      end;
+
       lBound := False;
       lFromBody := nil;
       lFromQuery := nil;
@@ -1237,11 +1460,22 @@ begin
       end
       else if lFromQuery <> nil then
       begin
-        lStrValue := AContext.Request.QueryStringParam(lFromQuery.ParamName);
-        if lStrValue.IsEmpty and lFromQuery.CanBeUsedADefaultValue then
-          lStrValue := lFromQuery.DefaultValueAsString;
-        lFieldValue := TMVCMinimalArgResolver.ConvertStringTo(lStrValue, lField.FieldType.Handle);
-        lField.SetValue(lAddr, lFieldValue);
+        if lField.FieldType.TypeKind = tkDynArray then
+        begin
+          // Repeated query keys (?tag=a&tag=b) -> typed dynamic array.
+          lField.SetValue(lAddr,
+            StringArrayToTypedArray(
+              AContext.Request.QueryParamsMulti[lFromQuery.ParamName],
+              lField.FieldType));
+        end
+        else
+        begin
+          lStrValue := AContext.Request.QueryStringParam(lFromQuery.ParamName);
+          if lStrValue.IsEmpty and lFromQuery.CanBeUsedADefaultValue then
+            lStrValue := lFromQuery.DefaultValueAsString;
+          lFieldValue := TMVCMinimalArgResolver.ConvertStringTo(lStrValue, lField.FieldType.Handle);
+          lField.SetValue(lAddr, lFieldValue);
+        end;
         lBound := True;
       end
       else if lFromHeader <> nil then
@@ -1305,6 +1539,10 @@ begin
       end;
     end;
 
+    // Records are validated exactly like classes: any field carrying validation
+    // attributes is checked, raising EMVCValidationException (422) on failure.
+    TMVCValidationEngine.ValidateRecord(lType, lAddr);
+
     TValue.Make(lAddr, ARecordTypeInfo, Result);
   finally
     lCtx.Free;
@@ -1352,6 +1590,7 @@ var
   lService: IInterface;
   lOutIntf: IInterface;
   lObj: TObject;
+  lReqFile: TAbstractWebRequestFile;
   lSerializer: IMVCSerializer;
   lStrValue: string;
   lParamName: string;
@@ -1369,6 +1608,24 @@ begin
   if lTypeInfo = TypeInfo(TWebContext) then
   begin
     lValue := TValue.From<TWebContext>(AContext);
+    Exit(lValue.AsType<T>);
+  end;
+
+  // 1b. TMVCFormFile -> first uploaded file (nil when none were posted).
+  //     Constructed inline (not via the unit-local WrapRequestFile) because
+  //     Resolve<T> is a generic interface-section method and may not reference
+  //     implementation-local symbols.
+  if lTypeInfo = TypeInfo(TMVCFormFile) then
+  begin
+    lObj := nil;
+    if (AContext.Request.Files <> nil) and (AContext.Request.Files.Count > 0) then
+    begin
+      lReqFile := AContext.Request.Files[0];
+      lObj := TMVCFormFile.Create(lReqFile.FieldName, lReqFile.FileName,
+        lReqFile.ContentType, lReqFile.Stream);
+      ABoundObjects.Add(lObj);
+    end;
+    lValue := TValue.From<TObject>(lObj);
     Exit(lValue.AsType<T>);
   end;
 
@@ -1392,8 +1649,10 @@ begin
 
   // 4. Class -> precedence:
   //    a) Group data (if the active route's GroupDataTypeInfo matches T)
-  //    b) Body (POST/PUT/PATCH)
+  //    b) Body (POST/PUT/PATCH JSON)
   //    c) Query string mapping (GET/DELETE)
+  //    Concrete classes are intentionally NOT resolved from the DI container;
+  //    only interfaces are. This keeps "class == data".
   if lTypeInfo.Kind = tkClass then
   begin
     // (a) group data lookup via the active TMVCMinimalRenderer

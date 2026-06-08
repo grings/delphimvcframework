@@ -56,6 +56,27 @@ type
     procedure Test_ContentNegotiation_html_accept_selects_rkWeb;
     [Test]
     procedure Test_ContentNegotiation_json_accept_selects_rkApi;
+    // ----- Minimal API parity features -----
+    [Test]
+    procedure Test_Record_validation_rejects_invalid;
+    [Test]
+    procedure Test_Record_validation_accepts_valid;
+    [Test]
+    procedure Test_FormFile_single_arg_binds_first_file;
+    [Test]
+    procedure Test_FormFile_record_field_with_text_field;
+    [Test]
+    procedure Test_QueryString_array_binding_string_and_int;
+    [Test]
+    procedure Test_Wildcard_segment_captures_rest_of_path;
+    [Test]
+    procedure Test_Wildcard_segment_matches_empty_tail;
+    [Test]
+    procedure Test_RequireRole_unauthenticated_is_401;
+    [Test]
+    procedure Test_RequireRole_wrong_role_is_403;
+    [Test]
+    procedure Test_RequireRole_correct_role_is_200;
   end;
 
 implementation
@@ -63,6 +84,7 @@ implementation
 uses
   System.SysUtils,
   System.Classes,
+  System.IOUtils,
   System.Threading,
   System.SyncObjs,
   JsonDataObjects,
@@ -268,6 +290,121 @@ begin
   Assert.AreEqual<Integer>(200, lResp.StatusCode);
   Assert.Contains(LowerCase(lResp.HeaderValue('Content-Type')), 'application/json');
   Assert.Contains(lResp.Content, 'negotiate-api');
+end;
+
+// ----- Minimal API parity features -----
+
+procedure TTestMinimalWebApi.Test_Record_validation_rejects_invalid;
+var
+  lResp: IMVCRESTResponse;
+begin
+  // MinLength(3) on the bound query field -> too short -> 422
+  lResp := RESTClient.Get('/minimal-feat/validate?q=ab');
+  Assert.AreEqual<Integer>(422, lResp.StatusCode);
+end;
+
+procedure TTestMinimalWebApi.Test_Record_validation_accepts_valid;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient.Get('/minimal-feat/validate?q=abc');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'q=abc');
+end;
+
+procedure TTestMinimalWebApi.Test_FormFile_single_arg_binds_first_file;
+var
+  lResp: IMVCRESTResponse;
+  lTmp: string;
+begin
+  lTmp := TPath.Combine(TPath.GetTempPath, 'mvc_upload_a.txt');
+  TFile.WriteAllText(lTmp, 'hello-upload');
+  try
+    lResp := RESTClient.AddFile('doc', lTmp, 'text/plain').Post('/minimal-feat/upload1');
+    Assert.AreEqual<Integer>(200, lResp.StatusCode);
+    Assert.Contains(lResp.Content, 'name=mvc_upload_a.txt');
+    Assert.Contains(lResp.Content, 'size=12'); // 'hello-upload' = 12 bytes
+  finally
+    TFile.Delete(lTmp);
+  end;
+end;
+
+procedure TTestMinimalWebApi.Test_FormFile_record_field_with_text_field;
+var
+  lResp: IMVCRESTResponse;
+  lTmp: string;
+begin
+  lTmp := TPath.Combine(TPath.GetTempPath, 'mvc_upload_b.txt');
+  TFile.WriteAllText(lTmp, 'abc');
+  try
+    lResp := RESTClient
+      .AddBodyFieldFormData('title', 'My Doc')
+      .AddFile('doc', lTmp, 'text/plain')
+      .Post('/minimal-feat/upload');
+    Assert.AreEqual<Integer>(200, lResp.StatusCode);
+    Assert.Contains(lResp.Content, 'title=My Doc');
+    Assert.Contains(lResp.Content, 'file=mvc_upload_b.txt');
+  finally
+    TFile.Delete(lTmp);
+  end;
+end;
+
+procedure TTestMinimalWebApi.Test_QueryString_array_binding_string_and_int;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient.Get('/minimal-feat/tags?tag=red&tag=green&tag=blue&id=1&id=2&id=4');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'tags=3');
+  Assert.Contains(lResp.Content, 'first=red');
+  Assert.Contains(lResp.Content, 'idsum=7'); // 1+2+4
+end;
+
+procedure TTestMinimalWebApi.Test_Wildcard_segment_captures_rest_of_path;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient.Get('/minimal-feat/files/a/b/c.txt');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'path=a/b/c.txt');
+end;
+
+procedure TTestMinimalWebApi.Test_Wildcard_segment_matches_empty_tail;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient.Get('/minimal-feat/files/');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'path=');
+end;
+
+procedure TTestMinimalWebApi.Test_RequireRole_unauthenticated_is_401;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient.Get('/minimal-feat/admin');
+  Assert.AreEqual<Integer>(401, lResp.StatusCode);
+end;
+
+procedure TTestMinimalWebApi.Test_RequireRole_wrong_role_is_403;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient
+    .AddHeader('X-Role', 'user')
+    .Get('/minimal-feat/admin');
+  Assert.AreEqual<Integer>(403, lResp.StatusCode);
+end;
+
+procedure TTestMinimalWebApi.Test_RequireRole_correct_role_is_200;
+var
+  lResp: IMVCRESTResponse;
+begin
+  lResp := RESTClient
+    .AddHeader('X-Role', 'admin')
+    .Get('/minimal-feat/admin');
+  Assert.AreEqual<Integer>(200, lResp.StatusCode);
+  Assert.Contains(lResp.Content, 'admin-ok');
 end;
 
 initialization

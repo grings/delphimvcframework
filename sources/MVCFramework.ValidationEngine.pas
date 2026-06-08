@@ -157,6 +157,16 @@ type
     class procedure ValidateAndRaise(const AObject: TObject);
 
     /// <summary>
+    /// Validates a record value in place. Iterates the record's fields and runs
+    /// every TMVCValidatorBase attribute found on each field against that field's
+    /// value (cross-field validators receive nil as the owning object).
+    /// Raises EMVCValidationException if any validator fails. No-op when the
+    /// record carries no validation attributes.
+    /// </summary>
+    class procedure ValidateRecord(const ARecordType: TRttiType;
+      const ARecordAddr: Pointer);
+
+    /// <summary>
     /// Clears the validatable class cache (useful for testing)
     /// </summary>
     class procedure ClearCache;
@@ -474,6 +484,37 @@ begin
     end;
   end;
   // If validation passed, LErrors = nil, nothing to free
+end;
+
+class procedure TMVCValidationEngine.ValidateRecord(
+  const ARecordType: TRttiType; const ARecordAddr: Pointer);
+var
+  LField: TRttiField;
+  LAttr: TCustomAttribute;
+  LValidator: TMVCValidatorBase;
+  LErrors: TDictionary<string, string>;
+begin
+  LErrors := nil;
+  for LField in ARecordType.GetFields do
+    for LAttr in LField.GetAttributes do
+      if LAttr is TMVCValidatorBase then
+      begin
+        LValidator := TMVCValidatorBase(LAttr);
+        if not LValidator.Validate(LField.GetValue(ARecordAddr), nil) then
+        begin
+          if LErrors = nil then
+            LErrors := TDictionary<string, string>.Create;
+          LErrors.AddOrSetValue(LField.Name, LValidator.GetErrorMessage);
+        end;
+      end;
+  if LErrors <> nil then
+    // EMVCValidationException copies the dictionary internally, so the local
+    // one is freed after the raise (mirrors ValidateAndRaise above).
+    try
+      raise EMVCValidationException.Create(LErrors);
+    finally
+      LErrors.Free;
+    end;
 end;
 
 class procedure TMVCValidationEngine.ClearCache;

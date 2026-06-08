@@ -37,7 +37,9 @@ implementation
 
 uses
   System.SysUtils,
-  System.Classes;
+  System.Classes,
+  MVCFramework.Validators,
+  MVCFramework.Filters;
 
 type
   TLoginForm = record
@@ -49,6 +51,46 @@ type
   TMultiValueForm = record
     [MVCFromContentField('tag')] Tags: TArray<string>;
   end;
+
+  // #2 record validation: MinLength(3) on a [MVCFromQueryString] field
+  TValidatedQuery = record
+    [MVCFromQueryString('q')]
+    [MVCMinLength(3)]
+    Q: string;
+  end;
+
+  // #3 file upload: record mixing a [MVCFromFile] field with a text field
+  TUploadForm = record
+    [MVCFromContentField('title')] Title: string;
+    [MVCFromFile('doc')] Doc: TMVCFormFile;
+  end;
+
+  // #4 typed array binding from repeated query keys
+  TTagQuery = record
+    [MVCFromQueryString('tag')] Tags: TArray<string>;
+    [MVCFromQueryString('id')]  Ids: TArray<Integer>;
+  end;
+
+// #6 test-only authentication filter: promotes the X-Role header to LoggedUser.
+function FakeAuthFromHeader: TMVCEndpointFilter;
+begin
+  Result :=
+    function (const Ctx: TWebContext;
+              const Next: TMVCEndpointFilterNext): IMVCResponse
+    var
+      lRole: string;
+    begin
+      lRole := Ctx.Request.Headers['X-Role'];
+      if lRole <> '' then
+      begin
+        Ctx.LoggedUser.UserName := 'tester';
+        Ctx.LoggedUser.LoggedSince := Now; // IsValid requires UserName + LoggedSince
+        Ctx.LoggedUser.Roles.Clear;
+        Ctx.LoggedUser.Roles.Add(lRole);
+      end;
+      Result := Next();
+    end;
+end;
 
 procedure RegisterMinimalAPIWebRoutes(AEngine: TMVCEngine);
 begin
@@ -148,6 +190,73 @@ begin
     begin
       Result := RenderView('minimal_web_negotiate');
     end);
+
+  // ===== Minimal API parity features ======================================
+
+  // #2 record validation: MinLength(3) on a [MVCFromQueryString] field
+  AEngine.Root.MapGet<TValidatedQuery>('/minimal-feat/validate',
+    function (Q: TValidatedQuery): IMVCResponse
+    begin
+      Result := Ok('q=' + Q.Q);
+    end);
+
+  // #3 single TMVCFormFile arg -> first uploaded file
+  AEngine.Root.MapPost<TMVCFormFile>('/minimal-feat/upload1',
+    function (F: TMVCFormFile): IMVCResponse
+    begin
+      if F = nil then
+        Result := BadRequest('no file')
+      else
+        Result := Ok(Format('name=%s size=%d', [F.FileName, F.Size]));
+    end);
+
+  // #3 record with a [MVCFromFile] field alongside a text field
+  AEngine.Root.MapPost<TUploadForm>('/minimal-feat/upload',
+    function (F: TUploadForm): IMVCResponse
+    var
+      lFileName: string;
+    begin
+      if F.Doc = nil then
+        lFileName := '<none>'
+      else
+        lFileName := F.Doc.FileName;
+      Result := Ok(Format('title=%s file=%s', [F.Title, lFileName]));
+    end);
+
+  // #4 typed array binding from repeated query-string keys
+  AEngine.Root.MapGet<TTagQuery>('/minimal-feat/tags',
+    function (Q: TTagQuery): IMVCResponse
+    var
+      lSum, I: Integer;
+      lFirst: string;
+    begin
+      lSum := 0;
+      for I := 0 to High(Q.Ids) do
+        lSum := lSum + Q.Ids[I];
+      if Length(Q.Tags) > 0 then
+        lFirst := Q.Tags[0]
+      else
+        lFirst := '';
+      Result := Ok(Format('tags=%d first=%s idsum=%d',
+        [Length(Q.Tags), lFirst, lSum]));
+    end);
+
+  // #5 trailing wildcard segment ($path:*) captures the rest of the URL
+  AEngine.Root.MapGet<string>('/minimal-feat/files/($path:*)',
+    function (Path: string): IMVCResponse
+    begin
+      Result := Ok('path=' + Path);
+    end);
+
+  // #6 declarative authorization: FakeAuth populates LoggedUser, RequireRole gates
+  AEngine.Root
+    .Use(FakeAuthFromHeader())
+    .Use(RequireRole('admin'))
+    .MapGet('/minimal-feat/admin',
+      function: IMVCResponse
+      begin
+        Result := Ok('admin-ok');
+      end);
 end;
 
 end.

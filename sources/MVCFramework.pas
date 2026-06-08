@@ -364,6 +364,14 @@ type
 
   end;
 
+  // Minimal API: optionally overrides the multipart form-field name bound to a
+  // TMVCFormFile / TArray<TMVCFormFile> record field. When absent, the record
+  // field name is used. Binding itself is type-driven, so this attribute is
+  // only needed when the form field name differs from the record field name.
+  MVCFromFileAttribute = class(MVCInjectableParamAttribute)
+
+  end;
+
   MVCInjectAttribute = class(TCustomAttribute)
   private
     fServiceName: String;

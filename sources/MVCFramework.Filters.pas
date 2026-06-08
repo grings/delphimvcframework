@@ -283,6 +283,21 @@ function BasicAuth(
   const AHandler: IMVCAuthenticationHandler;
   const ARealm: string = 'DelphiMVCFramework REALM'): TMVCEndpointFilter; overload;
 
+// Endpoint filter: require an authenticated user (Context.LoggedUser.IsValid).
+// Replies 401 (ProblemDetails) when no valid user is present. Register AFTER
+// the authentication filter (JWT / BasicAuth / custom) that populates LoggedUser.
+//
+//   lEngine.Prefix('/admin').Use(JWT(...)).Use(Authorize);
+function Authorize: TMVCEndpointFilter;
+
+// Endpoint filter: require the authenticated user to hold a role. The array
+// overload is ANY-OF (passes when the user holds at least one listed role).
+// Replies 401 when unauthenticated, 403 when authenticated without the role.
+//
+//   lEngine.Prefix('/admin').Use(JWT(...)).Use(RequireRole('admin'));
+function RequireRole(const ARole: string): TMVCEndpointFilter; overload;
+function RequireRole(const ARoles: TArray<string>): TMVCEndpointFilter; overload;
+
 // File-backed session factory EndpointFilter — sibling of MemorySession with
 // the same per-group / nested-inheritance shape. Sessions survive process
 // restart (data stored under ASessionFolder).
@@ -1383,6 +1398,49 @@ begin
       else
         Result := Build401WithWWWAuthenticate(AContext, ARealm);
     end;
+end;
+
+// --- Authorize / RequireRole (EndpointFilter) ----------------------------
+
+function Authorize: TMVCEndpointFilter;
+begin
+  Result :=
+    function (const Ctx: TWebContext;
+              const Next: TMVCEndpointFilterNext): IMVCResponse
+    begin
+      if not Ctx.LoggedUser.IsValid then
+        Exit(Status(http_status.Unauthorized, 'Authentication required'));
+      Result := Next();
+    end;
+end;
+
+function RequireRole(const ARoles: TArray<string>): TMVCEndpointFilter;
+begin
+  Result :=
+    function (const Ctx: TWebContext;
+              const Next: TMVCEndpointFilterNext): IMVCResponse
+    var
+      lRole: string;
+      lHas: Boolean;
+    begin
+      if not Ctx.LoggedUser.IsValid then
+        Exit(Status(http_status.Unauthorized, 'Authentication required'));
+      lHas := False;
+      for lRole in ARoles do
+        if Ctx.LoggedUser.Roles.Contains(lRole) then
+        begin
+          lHas := True;
+          Break;
+        end;
+      if not lHas then
+        Exit(Status(http_status.Forbidden, 'Insufficient privileges'));
+      Result := Next();
+    end;
+end;
+
+function RequireRole(const ARole: string): TMVCEndpointFilter;
+begin
+  Result := RequireRole(TArray<string>.Create(ARole));
 end;
 
 // --- FileSession (EndpointFilter) ----------------------------------------

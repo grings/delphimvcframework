@@ -849,6 +849,13 @@ begin
           lRttiType := lRttiCtx.GetType(lTypeInfo);
           for lField in lRttiType.GetFields do
           begin
+            // Form-file fields are multipart body inputs, not query/header/cookie
+            // parameters — skip them here (they would produce an invalid schema).
+            if (lField.FieldType.Handle = TypeInfo(TMVCFormFile))
+               or SameText(lField.FieldType.QualifiedName,
+                    'System.TArray<MVCFramework.MinimalAPI.TMVCFormFile>') then
+              Continue;
+
             lFromQS := False; lFromHeader := False;
             lFromCookie := False; lFromBody := False;
             lFieldParamName := lField.Name;
