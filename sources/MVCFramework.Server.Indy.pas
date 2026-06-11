@@ -30,7 +30,7 @@ interface
 
 uses
   System.SysUtils, System.Classes,
-  IdHTTPServer, IdContext, IdCustomHTTPServer, IdSocketHandle,
+  IdHTTPServer, IdContext, IdCustomHTTPServer, IdSocketHandle, IdGlobal,
   MVCFramework, MVCFramework.Server.Intf, MVCFramework.Commons;
 
 type
@@ -62,6 +62,7 @@ type
     procedure OnParseAuthentication(AContext: TIdContext;
       const AAuthType, AAuthData: String;
       var VUsername, VPassword: String; var VHandled: Boolean);
+    procedure OnQuerySSLPort(APort: TIdPort; var VUseSSL: Boolean);
     procedure ConfigureHTTPS;
   protected
     procedure SetEngine(AEngine: TMVCEngine);
@@ -157,6 +158,11 @@ begin
       '  uses MVCFramework.Server.HTTPS.TaurusTLS;' + sLineBreak +
       '  LServer.HTTPSConfigurator := TaurusTLSIndyConfigurator;');
   FHTTPSConfigurator(Self);
+  // The configurator installed an SSL IOHandler. By default TIdHTTPServer
+  // negotiates TLS only on port 443 (DoQuerySSLPort), silently serving
+  // plaintext on any other port. Since UseHTTPS makes the whole server
+  // TLS, force SSL on for every port via OnQuerySSLPort.
+  FHTTPServer.OnQuerySSLPort := OnQuerySSLPort;
 end;
 
 procedure TMVCIndyServer.Listen(APort: Integer; const AHost: string);
@@ -215,6 +221,13 @@ procedure TMVCIndyServer.OnParseAuthentication(AContext: TIdContext;
 begin
   // Let the framework handle authentication via middleware
   VHandled := True;
+end;
+
+procedure TMVCIndyServer.OnQuerySSLPort(APort: TIdPort; var VUseSSL: Boolean);
+begin
+  // HTTPS is enabled for the whole server: negotiate TLS on every port,
+  // not just 443 (Indy's default).
+  VUseSSL := True;
 end;
 
 procedure TMVCIndyServer.InternalHandleRequest(AContext: TIdContext;

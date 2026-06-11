@@ -78,13 +78,44 @@ type
     procedure TestOldEngineConstructorStillWorks;
   end;
 
+  // HTTPS (Indy Direct + TaurusTLS) tests. The server is started on a port
+  // OTHER than 443 on purpose: it is the exact regression guard for the
+  // OnQuerySSLPort fix. Without it, TIdHTTPServer keeps the connection in
+  // plaintext passthrough on any non-443 port and TLS never engages.
+  [TestFixture]
+  TTestIndyServerHTTPS = class(TObject)
+  private
+    FEngine: TMVCEngine;
+    FServer: IMVCServer;
+    FCertFile: string;
+    FKeyFile: string;
+    procedure StartHTTPSServer(APort: Integer);
+    function HTTPSGet(const AURL: string; out AStatusCode: Integer): string;
+  public
+    [SetUp]
+    procedure SetUp;
+    [TearDown]
+    procedure TearDown;
+    [Test]
+    procedure TestHTTPSGetOnNonStandardPort;
+    [Test]
+    procedure TestHTTPSPostOnNonStandardPort;
+    [Test]
+    procedure TestHTTPSStartStop;
+  end;
+
 const
   TEST_INDY_PORT = 9876;
   TEST_COMPAT_PORT = 9877;
+  TEST_HTTPS_PORT = 9878; // deliberately NOT 443: exercises the OnQuerySSLPort fix
 
 implementation
 
 uses
+  System.IOUtils,
+  IdHTTP,
+  TaurusTLS,
+  MVCFramework.Server.HTTPS.TaurusTLS,
   MVCFramework.RESTClient,
   MVCFramework.RESTClient.Intf,
   StandaloneServerTestU,
@@ -313,9 +344,115 @@ begin
   end;
 end;
 
+{ TTestIndyServerHTTPS }
+
+procedure TTestIndyServerHTTPS.SetUp;
+var
+  lCertDir: string;
+begin
+  FEngine := nil;
+  FServer := nil;
+  lCertDir := TPath.Combine(ExtractFilePath(ParamStr(0)), 'certificates');
+  FCertFile := TPath.Combine(lCertDir, 'localhost.crt');
+  FKeyFile := TPath.Combine(lCertDir, 'localhost.key');
+end;
+
+procedure TTestIndyServerHTTPS.TearDown;
+begin
+  if Assigned(FServer) then
+  begin
+    if FServer.IsRunning then
+      FServer.Stop;
+    FServer := nil;
+  end;
+  FreeAndNil(FEngine);
+end;
+
+procedure TTestIndyServerHTTPS.StartHTTPSServer(APort: Integer);
+begin
+  if not (TFile.Exists(FCertFile) and TFile.Exists(FKeyFile)) then
+    Assert.Pass('Test certificates not found next to the test executable ('
+      + FCertFile + '); skipping HTTPS test.');
+
+  FEngine := TMVCEngine.Create(TProc<TMVCConfig>(nil));
+  FEngine.AddController(TTestAbstractionController);
+  FServer := TMVCIndyServer.Create(FEngine);
+  FServer.UseHTTPS := True;
+  FServer.HTTPSConfigurator := TaurusTLSIndyConfigurator();
+  FServer.CertFile := FCertFile;
+  FServer.KeyFile := FKeyFile;
+  FServer.Listen(APort);
+end;
+
+function TTestIndyServerHTTPS.HTTPSGet(const AURL: string; out AStatusCode: Integer): string;
+var
+  lHTTP: TIdHTTP;
+  lSSL: TTaurusTLSIOHandlerSocket;
+begin
+  lHTTP := TIdHTTP.Create(nil);
+  try
+    lSSL := TTaurusTLSIOHandlerSocket.Create(lHTTP);
+    lSSL.SSLOptions.Mode := sslmClient;
+    lSSL.SSLOptions.VerifyMode := []; // accept the self-signed test certificate
+    lHTTP.IOHandler := lSSL;
+    Result := lHTTP.Get(AURL);
+    AStatusCode := lHTTP.ResponseCode;
+  finally
+    lHTTP.Free;
+  end;
+end;
+
+procedure TTestIndyServerHTTPS.TestHTTPSGetOnNonStandardPort;
+var
+  lBody: string;
+  lStatus: Integer;
+begin
+  StartHTTPSServer(TEST_HTTPS_PORT);
+  lBody := HTTPSGet(Format('https://localhost:%d/hello', [TEST_HTTPS_PORT]), lStatus);
+  Assert.AreEqual(200, lStatus, 'HTTPS GET on a non-443 port must succeed (OnQuerySSLPort fix)');
+  Assert.Contains(lBody, 'Hello World from Indy Direct');
+end;
+
+procedure TTestIndyServerHTTPS.TestHTTPSPostOnNonStandardPort;
+var
+  lHTTP: TIdHTTP;
+  lSSL: TTaurusTLSIOHandlerSocket;
+  lReq: TStringStream;
+  lResp: string;
+begin
+  StartHTTPSServer(TEST_HTTPS_PORT);
+  lHTTP := TIdHTTP.Create(nil);
+  try
+    lSSL := TTaurusTLSIOHandlerSocket.Create(lHTTP);
+    lSSL.SSLOptions.Mode := sslmClient;
+    lSSL.SSLOptions.VerifyMode := [];
+    lHTTP.IOHandler := lSSL;
+    lHTTP.Request.ContentType := 'application/json';
+    lReq := TStringStream.Create('{"name":"DelphiMVCFramework"}', TEncoding.UTF8);
+    try
+      lResp := lHTTP.Post(Format('https://localhost:%d/echo', [TEST_HTTPS_PORT]), lReq);
+    finally
+      lReq.Free;
+    end;
+    Assert.AreEqual(200, lHTTP.ResponseCode);
+    Assert.Contains(lResp, 'DelphiMVCFramework');
+  finally
+    lHTTP.Free;
+  end;
+end;
+
+procedure TTestIndyServerHTTPS.TestHTTPSStartStop;
+begin
+  StartHTTPSServer(TEST_HTTPS_PORT);
+  Assert.IsTrue(FServer.IsRunning, 'HTTPS server should be running after Listen');
+  FServer.Stop;
+  Assert.IsFalse(FServer.IsRunning, 'HTTPS server should be stopped after Stop');
+end;
+
 initialization
 
 TDUnitX.RegisterTestFixture(TTestIndyServer);
 TDUnitX.RegisterTestFixture(TTestWebBrokerBackwardCompat);
+TDUnitX.RegisterTestFixture(TTestIndyServerHTTPS);
 
 end.

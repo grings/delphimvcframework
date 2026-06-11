@@ -30,7 +30,7 @@ interface
 
 uses
   System.SysUtils, System.Classes,
-  IdContext,
+  IdContext, IdGlobal,
   MVCFramework, MVCFramework.Server.Intf, MVCFramework.Commons;
 
 type
@@ -60,6 +60,7 @@ type
     procedure OnParseAuthentication(AContext: TIdContext;
       const AAuthType, AAuthData: String;
       var VUsername, VPassword: String; var VHandled: Boolean);
+    procedure OnQuerySSLPort(APort: TIdPort; var VUseSSL: Boolean);
     procedure ConfigureHTTPS;
   protected
     procedure SetEngine(AEngine: TMVCEngine);
@@ -187,6 +188,8 @@ begin
       '  uses MVCFramework.Server.HTTPS.TaurusTLS;' + sLineBreak +
       '  LServer.HTTPSConfigurator := TaurusTLSWebBrokerConfigurator;');
   FHTTPSConfigurator(Self);
+  // See TMVCIndyServer.ConfigureHTTPS: force TLS on every port, not just 443.
+  BridgeOf(Self).OnQuerySSLPort := OnQuerySSLPort;
 end;
 
 procedure TMVCWebBrokerServer.Listen(APort: Integer; const AHost: string);
@@ -240,6 +243,12 @@ procedure TMVCWebBrokerServer.OnParseAuthentication(AContext: TIdContext;
   var VUsername, VPassword: String; var VHandled: Boolean);
 begin
   VHandled := True;
+end;
+
+procedure TMVCWebBrokerServer.OnQuerySSLPort(APort: TIdPort; var VUseSSL: Boolean);
+begin
+  // HTTPS enabled for the whole server: negotiate TLS on every port, not just 443.
+  VUseSSL := True;
 end;
 
 procedure TMVCWebBrokerServer.SetEngine(AEngine: TMVCEngine);
