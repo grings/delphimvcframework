@@ -2554,7 +2554,7 @@ begin
   Config[TMVCConfigKey.DefaultContentType] := TMVCConstants.DEFAULT_CONTENT_TYPE;
   Config[TMVCConfigKey.DefaultContentCharset] := TMVCConstants.DEFAULT_CONTENT_CHARSET;
   Config[TMVCConfigKey.DefaultViewFileExtension] := 'html';
-  Config[TMVCConfigKey.ViewPath] := 'templates';
+  Config[TMVCConfigKey.ViewPath] := TPath.Combine(AppPath, 'templates');
   Config[TMVCConfigKey.PathPrefix] := '';
   Config[TMVCConfigKey.AllowUnhandledAction] := 'false';
   Config[TMVCConfigKey.ServerName] := 'DelphiMVCFramework';
