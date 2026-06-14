@@ -272,9 +272,16 @@ type
   // and route-scoped filters without affecting the group.
   TMVCRouteHandle = record
   strict private
-    fRoute: TMVCMinimalRoute;
+    // A handle can cover more than one route: MapMethods registers one route
+    // per verb, and OpenAPI metadata / route-scoped filters set through the
+    // handle apply to every one of them. WithName is the exception, because an
+    // operationId must stay unique, so it targets the primary route only.
+    fRoutes: TArray<TMVCMinimalRoute>;
+    function GetPrimary: TMVCMinimalRoute;
+    procedure SetMeta(const AKey: string; const AValue: TValue);
   public
-    constructor Create(ARoute: TMVCMinimalRoute);
+    constructor Create(ARoute: TMVCMinimalRoute); overload;
+    constructor Create(const ARoutes: TArray<TMVCMinimalRoute>); overload;
     // Symbolic name for the endpoint. Useful for OpenAPI operationId,
     // URL generation, logs, route enumeration, ...
     // Empty names and duplicate names across the engine raise
@@ -298,8 +305,8 @@ type
     function WithOpenAPI(const AVisible: Boolean = True): TMVCRouteHandle;
     // Route-scoped filter, appended after the group's filter stack.
     function Use(const AFilter: TMVCEndpointFilter): TMVCRouteHandle;
-    // Escape hatch: access the underlying route.
-    property Route: TMVCMinimalRoute read fRoute;
+    // Escape hatch: access the underlying (primary) route.
+    property Route: TMVCMinimalRoute read GetPrimary;
   end;
 
   // Static helpers used by the OpenAPI emitter (and other introspection
@@ -972,68 +979,97 @@ end;
 
 constructor TMVCRouteHandle.Create(ARoute: TMVCMinimalRoute);
 begin
-  fRoute := ARoute;
+  fRoutes := [ARoute];
+end;
+
+constructor TMVCRouteHandle.Create(const ARoutes: TArray<TMVCMinimalRoute>);
+begin
+  fRoutes := ARoutes;
+end;
+
+function TMVCRouteHandle.GetPrimary: TMVCMinimalRoute;
+begin
+  if Length(fRoutes) = 0 then
+    Result := nil
+  else
+    Result := fRoutes[0];
+end;
+
+procedure TMVCRouteHandle.SetMeta(const AKey: string; const AValue: TValue);
+var
+  lRoute: TMVCMinimalRoute;
+begin
+  // OpenAPI metadata is per-operation, so it is stamped on every verb the
+  // handle covers (one route for a single Map*, several for MapMethods).
+  for lRoute in fRoutes do
+    lRoute.Metadata.AddOrSetValue(AKey, AValue);
 end;
 
 function TMVCRouteHandle.WithName(const AName: string): TMVCRouteHandle;
 begin
-  fRoute.Name := AName;
+  // An operationId must be unique across the engine, so a multi-verb handle
+  // names only its primary (first) route; the sibling verbs stay unnamed.
+  GetPrimary.Name := AName;
   Result := Self;
 end;
 
 function TMVCRouteHandle.WithSummary(const ASummary: string): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('summary', TValue.From<string>(ASummary));
+  SetMeta('summary', TValue.From<string>(ASummary));
   Result := Self;
 end;
 
 function TMVCRouteHandle.WithDescription(const ADescription: string): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('description', TValue.From<string>(ADescription));
+  SetMeta('description', TValue.From<string>(ADescription));
   Result := Self;
 end;
 
 function TMVCRouteHandle.WithTags(const ATag: string): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('tags', TValue.From<TArray<string>>([ATag]));
+  SetMeta('tags', TValue.From<TArray<string>>([ATag]));
   Result := Self;
 end;
 
 function TMVCRouteHandle.WithTags(const ATags: TArray<string>): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('tags', TValue.From<TArray<string>>(ATags));
+  SetMeta('tags', TValue.From<TArray<string>>(ATags));
   Result := Self;
 end;
 
 function TMVCRouteHandle.WithDeprecated(const AValue: Boolean): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('deprecated', TValue.From<Boolean>(AValue));
+  SetMeta('deprecated', TValue.From<Boolean>(AValue));
   Result := Self;
 end;
 
 function TMVCRouteHandle.Produces<T>: TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('produces.200',
-    TValue.From<PTypeInfo>(TypeInfo(T)));
+  SetMeta('produces.200', TValue.From<PTypeInfo>(TypeInfo(T)));
   Result := Self;
 end;
 
 function TMVCRouteHandle.WithOpenAPI(const AVisible: Boolean): TMVCRouteHandle;
 begin
-  fRoute.Metadata.AddOrSetValue('openapi.visible', TValue.From<Boolean>(AVisible));
+  SetMeta('openapi.visible', TValue.From<Boolean>(AVisible));
   Result := Self;
 end;
 
 function TMVCRouteHandle.Use(const AFilter: TMVCEndpointFilter): TMVCRouteHandle;
 var
+  lRoute: TMVCMinimalRoute;
   lLen: Integer;
   lArr: TArray<TMVCEndpointFilter>;
 begin
-  lArr := fRoute.Filters;
-  lLen := Length(lArr);
-  SetLength(lArr, lLen + 1);
-  lArr[lLen] := AFilter;
-  fRoute.Filters := lArr;
+  // A route-scoped filter applies to every verb the handle covers.
+  for lRoute in fRoutes do
+  begin
+    lArr := lRoute.Filters;
+    lLen := Length(lArr);
+    SetLength(lArr, lLen + 1);
+    lArr[lLen] := AFilter;
+    lRoute.Filters := lArr;
+  end;
   Result := Self;
 end;
 
@@ -2286,15 +2322,17 @@ function TMVCRouteGroup<T>.RegisterMany(
   const AParamTypes: TArray<PTypeInfo>): TMVCRouteHandle;
 var
   V: TMVCHTTPMethodType;
-  lLast: TMVCMinimalRoute;
+  lRoutes: TArray<TMVCMinimalRoute>;
 begin
-  lLast := nil;
+  lRoutes := nil;
   for V in AVerbs do
-    lLast := RegisterRoute(V, APath, AThunk, AParamTypes);
-  // The returned handle wraps the LAST verb's route. Calling WithName on it
-  // names only that one — most callers don't care because MapMethods is a
-  // shortcut; if you need per-verb naming, register each verb separately.
-  Result := TMVCRouteHandle.Create(lLast);
+    lRoutes := lRoutes + [RegisterRoute(V, APath, AThunk, AParamTypes)];
+  // The returned handle covers every verb's route: OpenAPI metadata
+  // (WithSummary/WithTags/WithOpenAPI/...) and route-scoped filters set on it
+  // apply to all of them. WithName targets the primary (first) verb only,
+  // because an operationId must stay unique; register each verb separately if
+  // you need per-verb names.
+  Result := TMVCRouteHandle.Create(lRoutes);
 end;
 
 // ----- Map* (5 verbs x 5 arity = 25) --------------------------------------
