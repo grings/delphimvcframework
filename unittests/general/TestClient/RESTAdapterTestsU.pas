@@ -114,6 +114,10 @@ type
     procedure TestPostPerson;
     [Test]
     procedure TestSearchPeopleBySample_ObjectBodyArrayResult;
+    // Issue #900: the [Body] object must not be freed before the IAsynchRequest
+    // inspection (which reads the last argument). Otherwise it is a use-after-free.
+    [Test]
+    procedure TestIssue900_BodyNotFreedBeforeAsyncCheck;
     [Test]
     procedure TestGetPersonByID;
     [Test]
@@ -270,6 +274,70 @@ begin
     Assert.AreEqual('Criteria', lResult[0].LastName);
   finally
     lResult.Free;
+  end;
+end;
+
+type
+  // A [Body] probe whose destruction is globally observable. Its destructor only
+  // touches a global counter, so the ordering assertion below never reads freed
+  // memory and is therefore independent of the active memory manager.
+  TProbePerson = class(TPerson)
+  public
+    destructor Destroy; override;
+  end;
+
+  // Instrumented adapter that snapshots how many probe bodies have been freed at
+  // the exact moment the async-request inspection runs.
+  TInstrumentedRESTAdapter = class(TRESTAdapter<ITESTService>)
+  protected
+    function GetAsynchRequest(const aArgs: TArray<TValue>): IAsynchRequest; override;
+  end;
+
+var
+  GProbeFreeCount: Integer;
+  GFreeCountAtAsyncCheck: Integer;
+
+destructor TProbePerson.Destroy;
+begin
+  Inc(GProbeFreeCount);
+  inherited;
+end;
+
+function TInstrumentedRESTAdapter.GetAsynchRequest(const aArgs: TArray<TValue>): IAsynchRequest;
+begin
+  GFreeCountAtAsyncCheck := GProbeFreeCount;
+  Result := inherited GetAsynchRequest(aArgs);
+end;
+
+procedure TTestRESTAdapter.TestIssue900_BodyNotFreedBeforeAsyncCheck;
+var
+  lService: ITESTService;
+  lProbe: TProbePerson;
+  lRet: TPerson;
+begin
+  GProbeFreeCount := 0;
+  GFreeCountAtAsyncCheck := -1;
+
+  // TRESTAdapter is a TVirtualInterface: the built interface owns the adapter
+  // instance through reference counting, so it must not be freed explicitly.
+  lService := TInstrumentedRESTAdapter.Create.Build(TEST_SERVER_ADDRESS, 8888);
+
+  lProbe := TProbePerson.Create;
+  lProbe.FirstName := 'Peter';
+  lProbe.LastName := 'Parker';
+  // The adapter owns the [Body] object (default OwnsObject = True) and frees it
+  // inside DoInvoke. lProbe is the last argument, so a premature free would make
+  // the subsequent IAsynchRequest inspection a use-after-free (issue #900).
+  lRet := lService.SendPerson(lProbe);
+  try
+    Assert.AreEqual<Integer>(0, GFreeCountAtAsyncCheck,
+      'Body was already freed when the IAsynchRequest check ran (use-after-free, issue #900)');
+    Assert.AreEqual<Integer>(1, GProbeFreeCount,
+      'Owned body must be freed exactly once by the adapter');
+    Assert.AreEqual('Peter', lRet.FirstName);
+    Assert.AreEqual('Parker', lRet.LastName);
+  finally
+    lRet.Free;
   end;
 end;
 
