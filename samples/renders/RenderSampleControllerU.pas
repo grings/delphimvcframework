@@ -283,11 +283,20 @@ type
     [MVCPath('/record')]
     procedure GetSingleRecord;
 
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/record/func')]
+    function GetSingleRecordFunc: TSimpleRecord;
+
 
     // Enums
     [MVCHTTPMethod([httpGET])]
     [MVCPath('/enums')]
     procedure GetClassWithEnums;
+
+    [MVCHTTPMethod([httpGET])]
+    [MVCPath('/enums/func')]
+    function GetClassWithEnumsFunc: TClassWithEnums;
+
 
     [MVCHTTPMethod([httpPOST])]
     [MVCPath('/enums')]
@@ -489,6 +498,16 @@ begin
   lObj.EnumWithOrdValue := ctGreen;
   lObj.EnumWithMappedValues := ctGreen;
   Render(lObj);
+end;
+
+function TRenderSampleController.GetClassWithEnumsFunc: TClassWithEnums;
+begin
+  Result := TClassWithEnums.Create;
+  Result.RGBSet := [ctGreen, ctBlue];
+  Result.EnumDefaultSerialization := ctGreen;
+  Result.EnumWithName := ctGreen;
+  Result.EnumWithOrdValue := ctGreen;
+  Result.EnumWithMappedValues := ctGreen;
 end;
 
 procedure TRenderSampleController.GetCustomerByID_AsTObject(const ID: Integer);
@@ -959,6 +978,11 @@ var
 begin
   lSR := TSimpleRecord.Create;
   Render<TSimpleRecord>(200, lSR);
+end;
+
+function TRenderSampleController.GetSingleRecordFunc: TSimpleRecord;
+begin
+  Result := TSimpleRecord.Create;
 end;
 
 procedure TRenderSampleController.GetPeopleAsCSV;
