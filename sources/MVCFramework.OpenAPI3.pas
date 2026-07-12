@@ -1,4 +1,4 @@
-// ***************************************************************************
+﻿// ***************************************************************************
 //
 // Delphi MVC Framework
 //
@@ -747,7 +747,7 @@ var
   lOpenAPIPath, lVerb: string;
   lPathParams: TArray<string>;
   lConstraints: TDictionary<string, string>;
-  lPathObj, lOperation, lParam, lRequestBody, lResponse, lContent, lMediaType, lResponses: TJsonObject;
+  lPathObj, lOperation, lRequestBody, lResponse, lContent, lMediaType, lResponses: TJsonObject;
   lParamsArr: TJsonArray;
   lUnmatchedPathParamIdx: Integer;
   lParamName, lConstraint, lTypeName: string;
@@ -756,7 +756,7 @@ var
   lSchema: TJsonObject;
   lTagsArr: TJsonArray;
   lTagsValue: TValue;
-  lSummary, lDescription, lTag, lOperationId: string;
+  lSummary, lDescription, lOperationId: string;
   lMetaValue: TValue;
   lRequestBodySet: Boolean;
   lRttiCtx: TRttiContext;
@@ -1101,7 +1101,7 @@ var
   lParameters: TArray<TRttiParameter>;
   lParameter: TRttiParameter;
   lAttr: TCustomAttribute;
-  lDescription, lParamName, lParamLocation, lTypeName, lOperationId: string;
+  lParamName, lParamLocation, lTypeName, lOperationId: string;
   lFromQS, lFromHeader, lFromCookie, lFromBody: Boolean;
   lSchema: TJsonObject;
   lAttrType: TRttiType;
