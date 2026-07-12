@@ -398,6 +398,7 @@ var
   LListCount: TRttiProperty;
   LListGetItem: TRttiMethod;
   LItemClass: TClass;
+  LClassAttr: TCustomAttribute;
 begin
   EnsureInit;
   GLock.Enter;
@@ -430,7 +431,7 @@ begin
     class decorated with stFields falls back to legacy. Properties as
     declared by stDefault/stProperties are the common case and the
     fast path we keep. }
-  for var LClassAttr in LType.GetAttributes do
+  for LClassAttr in LType.GetAttributes do
     if (LClassAttr is MVCSerializeAttribute) and
        (MVCSerializeAttribute(LClassAttr).SerializationType = stFields) then
     begin
@@ -1022,9 +1023,15 @@ procedure WriteObjectCore(const AObject: TObject; const AWriter: TJsonTextWriter
   const APlan: TMVCStreamingPlan);
 var
   I: Integer;
+  J: Integer;
   LValue: TValue;
   LNested: TObject;
   LNestedPlan: TMVCStreamingPlan;
+  LStreamObj: TStream;
+  LStringStream: TStringStream;
+  LDataSet: TDataSet;
+  LBmk: TBookmark;
+  LArrLen: Integer;
 begin
   AWriter.WriteStartObject;
   for I := 0 to High(APlan.Entries) do
@@ -1093,13 +1100,13 @@ begin
           streaming path; properties decorated with it should stay on
           the legacy fallback. A nil stream emits JSON null. }
         begin
-          var LStreamObj := LValue.AsObject as TStream;
+          LStreamObj := LValue.AsObject as TStream;
           if LStreamObj = nil then
             AWriter.WriteNull
           else
           begin
             LStreamObj.Position := 0;
-            var LStringStream := TStringStream.Create('', TEncoding.Default);
+            LStringStream := TStringStream.Create('', TEncoding.Default);
             try
               TMVCSerializerHelper.EncodeStream(LStreamObj, LStringStream);
               AWriter.WriteValue(LStringStream.DataString);
@@ -1113,12 +1120,12 @@ begin
           helper - no DOM build, no string intermediary. Bookmark save/
           restore keeps the caller's cursor position stable. }
         begin
-          var LDataSet := LValue.AsObject as TDataSet;
+          LDataSet := LValue.AsObject as TDataSet;
           if LDataSet = nil then
             AWriter.WriteNull
           else
           begin
-            var LBmk := LDataSet.BookMark;
+            LBmk := LDataSet.BookMark;
             try
               AWriter.WriteStartArray;
               try
@@ -1140,8 +1147,7 @@ begin
           AWriter.WriteStartArray;
           if not LValue.IsEmpty then
           begin
-            var LArrLen := LValue.GetArrayLength;
-            var J: Integer;
+            LArrLen := LValue.GetArrayLength;
             for J := 0 to LArrLen - 1 do
               EmitArrayElement(AWriter, APlan.Entries[I], LValue.GetArrayElement(J));
           end;

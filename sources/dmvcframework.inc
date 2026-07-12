@@ -39,10 +39,12 @@
 {$DEFINE MOBILE}
 {$ENDIF}
 
-{$IF CompilerVersion <= 29} // XE8
-DelphiMVCFramework is compatible with Delphi 10.0 or better
+{$IF CompilerVersion <= 31} // 10.1 Berlin and older
+DelphiMVCFramework requires Delphi 10.2 Tokyo or better
 {$ENDIF}
 
+{ SEATTLEORBETTER and BERLINORBETTER are kept because existing conditionals still
+  test them, but the supported baseline is 10.2 Tokyo: both are always defined. }
 {$IF CompilerVersion >= 30} // 10.0 Seattle
 {$DEFINE SEATTLEORBETTER}
 {$ENDIF}
@@ -51,7 +53,7 @@ DelphiMVCFramework is compatible with Delphi 10.0 or better
 {$DEFINE BERLINORBETTER}
 {$ENDIF}
 
-{$IF CompilerVersion >= 32} // 10.2 Tokyo
+{$IF CompilerVersion >= 32} // 10.2 Tokyo — minimum supported
 {$DEFINE TOKYOORBETTER}
 {$ENDIF}
 

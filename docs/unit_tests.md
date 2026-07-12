@@ -21,7 +21,7 @@ Apache and ISAPI integration sets.
 
 ### Required for every task
 
-- **Delphi** 10 Seattle or newer (Delphi 13 Florence recommended).
+- **Delphi** 10.2 Tokyo or newer (Delphi 13 Florence recommended).
   Build tooling uses `msbuild` via `rsvars.bat`, shipped with Delphi.
 - **Python 3.10+** and the [`invoke`](https://pyinvoke.org) + `colorama`
   packages:

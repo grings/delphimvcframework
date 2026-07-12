@@ -126,9 +126,7 @@ DelphiMVCFramework is a powerful, open-source framework for building RESTful ser
 - **Delphi 11.x Alexandria** ✅
 - **Delphi 10.4 Sydney** ✅
 - **Delphi 10.3 Rio** ✅
-- **Delphi 10.2 Tokyo** ✅
-- **Delphi 10.1 Berlin** ✅
-- **Delphi 10 Seattle** ✅
+- **Delphi 10.2 Tokyo** ✅ (minimum supported)
 
 ### Operating Systems
 - **Windows** (32-bit and 64-bit)
