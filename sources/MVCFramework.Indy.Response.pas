@@ -81,7 +81,7 @@ type
 implementation
 
 uses
-  System.DateUtils;
+  System.DateUtils, MVCFramework.Commons;
 
 { TMVCIndyDirectResponse }
 
@@ -265,7 +265,7 @@ end;
 
 procedure TMVCIndyDirectResponse.SetCustomHeader(const AName, AValue: string);
 begin
-  FCustomHeaders.Values[AName] := AValue;
+  FCustomHeaders.Values[MVCStripCRLF(AName)] := MVCStripCRLF(AValue);
 end;
 
 procedure TMVCIndyDirectResponse.SetContentStream(const AStream: TStream;

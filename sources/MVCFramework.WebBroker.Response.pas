@@ -71,6 +71,9 @@ type
 
 implementation
 
+uses
+  MVCFramework.Commons;
+
 { TMVCWebBrokerResponse }
 
 constructor TMVCWebBrokerResponse.Create(const AWebResponse: TWebResponse);
@@ -153,7 +156,7 @@ end;
 
 procedure TMVCWebBrokerResponse.SetCustomHeader(const AName, AValue: string);
 begin
-  FWebResponse.SetCustomHeader(AName, AValue);
+  FWebResponse.SetCustomHeader(MVCStripCRLF(AName), MVCStripCRLF(AValue));
 end;
 
 procedure TMVCWebBrokerResponse.SetLocation(const AValue: string);

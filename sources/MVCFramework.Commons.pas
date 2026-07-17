@@ -672,6 +672,9 @@ var
 function AppPath: string;
 function IsReservedOrPrivateIP(const AIP: string): Boolean; inline;
 function IP2Long(const AIP: string): UInt32; inline;
+/// <summary>Removes CR and LF characters from a string so it cannot inject an
+/// extra HTTP header when used as a header name or value (response splitting).</summary>
+function MVCStripCRLF(const AValue: string): string;
 
 function B64Encode(const aValue: string): string; overload;
 function B64Encode(const aValue: TBytes): string; overload;
@@ -925,6 +928,11 @@ end;
 function AppPath: string;
 begin
   Result := GlobalAppPath;
+end;
+
+function MVCStripCRLF(const AValue: string): string;
+begin
+  Result := AValue.Replace(#13, '', [rfReplaceAll]).Replace(#10, '', [rfReplaceAll]);
 end;
 
 function IP2Long(const AIP: string): Cardinal;

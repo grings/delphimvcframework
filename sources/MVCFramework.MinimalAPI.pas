@@ -116,6 +116,11 @@ type
     property FieldName: string read fFieldName;
     property FileName: string read fFileName;
     property ContentType: string read fContentType;
+    /// <summary>The client-supplied FileName reduced to a bare base name, with
+    /// any directory components / drive letter stripped, so it cannot be used
+    /// for path traversal or absolute-path overwrite. Empty for a name that is
+    /// only path separators or ".."/".". Prefer generating your own name.</summary>
+    function SafeFileName: string;
     function Size: Int64;
     // Request-owned content stream, seeked to 0. Do not free.
     function ContentStream: TStream;
@@ -670,6 +675,7 @@ implementation
 
 uses
   System.Diagnostics,
+  System.IOUtils,
   System.StrUtils,
   System.SyncObjs,
   Web.HTTPApp,
@@ -759,6 +765,16 @@ begin
   fFileName := AFileName;
   fContentType := AContentType;
   fStream := AStream;
+end;
+
+function TMVCFormFile.SafeFileName: string;
+begin
+  // Normalize forward slashes to the platform separator first so GetFileName
+  // strips both "../" and "..\" style directory components (and any drive
+  // letter). Reject a name that reduces to nothing meaningful.
+  Result := TPath.GetFileName(fFileName.Replace('/', TPath.DirectorySeparatorChar, [rfReplaceAll]));
+  if (Result = '.') or (Result = '..') then
+    Result := '';
 end;
 
 function TMVCFormFile.Size: Int64;

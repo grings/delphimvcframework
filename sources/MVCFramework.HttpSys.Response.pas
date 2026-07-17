@@ -100,7 +100,7 @@ implementation
 {$IFDEF MSWINDOWS}
 
 uses
-  System.DateUtils;
+  System.DateUtils, MVCFramework.Commons;
 
 const
   { Max number of unknown headers we support in a single response }
@@ -411,7 +411,7 @@ end;
 
 procedure TMVCHttpSysResponse.SetCustomHeader(const AName, AValue: string);
 begin
-  FCustomHeaders.Values[AName] := AValue;
+  FCustomHeaders.Values[MVCStripCRLF(AName)] := MVCStripCRLF(AValue);
 end;
 
 procedure TMVCHttpSysResponse.SetContentStream(const AStream: TStream;

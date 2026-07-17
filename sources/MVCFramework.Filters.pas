@@ -212,6 +212,13 @@ function CORSFilter(
   const AAllowsMethods: string = 'GET,POST,PUT,DELETE,PATCH,OPTIONS';
   const AAccessControlMaxAge: Integer = 1728000): TMVCHTTPFilter;
 
+/// <summary>Returns the value to emit as Access-Control-Allow-Origin given a
+/// comma-separated list of configured origins and the request's Origin header:
+/// the matched origin, '*' if a wildcard is configured, or '' if there is no
+/// match (the caller then emits no ACAO header). Never returns the whole list
+/// verbatim, which would be an invalid header.</summary>
+function MVCMatchCORSOrigin(const AConfiguredOrigins, ARequestOrigin: string): string;
+
 // HTTPFilter that stamps the baseline response security headers
 //   X-XSS-Protection: 1; mode=block
 //   X-Content-Type-Options: nosniff
@@ -452,6 +459,7 @@ uses
   System.DateUtils,                 // IncSecond (RateLimit HTTPFilter)
   System.NetEncoding,               // TNetEncoding.Base64 (BasicAuth helper)
   MVCFramework.Logger,              // Log.Debug, LogI, LogW (RequestLog/Trace/Shutdown)
+  MVCFramework.Middleware.RateLimit,// TMVCInMemoryRateLimitStorage (RateLimit HTTPFilter)
   MVCFramework.Serializer.Commons,  // TMVCSerializerHelper.DecodeString (BasicAuth)
   MVCFramework.Session,
   MVCFramework.Session.Database,    // TMVCWebSessionDatabaseFactory (DatabaseSession)
@@ -924,83 +932,33 @@ end;
 
 // --- RateLimit ------------------------------------------------------------
 
-type
-  // Holds the timestamp queue for one client IP. Wrapped in a class because
-  // we store it in a generic TDictionary that owns its values.
-  TIPHits = class
-  public
-    Hits: TList<TDateTime>;
-    constructor Create;
-    destructor Destroy; override;
-  end;
-
-constructor TIPHits.Create;
-begin
-  inherited Create;
-  Hits := TList<TDateTime>.Create;
-end;
-
-destructor TIPHits.Destroy;
-begin
-  Hits.Free;
-  inherited;
-end;
-
 function RateLimit(const AMaxRequests: Integer;
   const AWindowSeconds: Integer): TMVCHTTPFilter;
 var
-  lState: TObjectDictionary<string, TIPHits>;
-  lLock: TObject;
+  lStorage: IMVCRateLimitStorage;
 begin
-  // Process-wide state — one map per RateLimit() filter instance, shared by
-  // every request that hits this filter. Lock guards both the dictionary
-  // and each TIPHits.Hits list (cheap, low contention for typical loads).
-  lState := TObjectDictionary<string, TIPHits>.Create([doOwnsValues]);
-  lLock := TObject.Create;
-
-  // Closure owns lState + lLock for the engine's lifetime. They leak at
-  // process exit which is acceptable for a server's main engine — there is
-  // no Dispose() hook on TMVCHTTPFilter, by design (HTTPFilters are
-  // closures, not components).
+  // Delegate to the shared in-memory storage, which windows the counter AND
+  // evicts expired keys under its own lock. The previous inline dictionary
+  // never removed entries, so requests carrying a spoofable per-request key
+  // (e.g. a forged X-Forwarded-For behind no proxy) grew memory without bound.
+  // The interface is captured by the closure and released when the filter is
+  // dropped at engine shutdown.
+  lStorage := TMVCInMemoryRateLimitStorage.Create(rlsFixedWindow);
 
   Result :=
     procedure (const AContext: TWebContext;
                const ANext: TMVCHTTPFilterNext)
     var
-      lIP: string;
-      lEntry: TIPHits;
-      lNow, lCutoff: TDateTime;
-      i: Integer;
+      lRemaining: Integer;
+      lResetTime: TDateTime;
     begin
-      lIP := AContext.Request.ClientIp;
-      lNow := Now;
-      lCutoff := IncSecond(lNow, -AWindowSeconds);
-
-      TMonitor.Enter(lLock);
-      try
-        if not lState.TryGetValue(lIP, lEntry) then
-        begin
-          lEntry := TIPHits.Create;
-          lState.Add(lIP, lEntry);
-        end;
-        // Drop timestamps that fell out of the window.
-        i := 0;
-        while (i < lEntry.Hits.Count) and (lEntry.Hits[i] < lCutoff) do
-          Inc(i);
-        if i > 0 then
-          lEntry.Hits.DeleteRange(0, i);
-
-        if lEntry.Hits.Count >= AMaxRequests then
-        begin
-          AContext.Response.SetCustomHeader('Retry-After', IntToStr(AWindowSeconds));
-          AContext.Response.StatusCode := 429;
-          Exit; // short-circuit
-        end;
-        lEntry.Hits.Add(lNow);
-      finally
-        TMonitor.Exit(lLock);
+      if lStorage.CheckRateLimit(AContext.Request.ClientIp, AMaxRequests,
+        AWindowSeconds, lRemaining, lResetTime) then
+      begin
+        AContext.Response.SetCustomHeader('Retry-After', IntToStr(AWindowSeconds));
+        AContext.Response.StatusCode := 429;
+        Exit; // short-circuit, no Next()
       end;
-
       ANext();
     end;
 end;
@@ -1084,13 +1042,39 @@ end;
 // Extracted to a module-level proc because anonymous methods cannot capture
 // nested procedures (E2555). The closure inside CORS() calls it twice — for
 // the preflight branch and the post-handler branch.
+function MVCMatchCORSOrigin(const AConfiguredOrigins, ARequestOrigin: string): string;
+var
+  lAllowed, lTrimmed: string;
+begin
+  Result := '';
+  if ARequestOrigin = '' then
+    Exit;
+  for lAllowed in AConfiguredOrigins.Split([',']) do
+  begin
+    lTrimmed := lAllowed.Trim;
+    if lTrimmed = '*' then
+      Exit('*');
+    if SameText(ARequestOrigin, lTrimmed) then
+      Exit(lTrimmed);
+  end;
+end;
+
 procedure StampSimpleCORSHeaders(const AContext: TWebContext;
   const AAllowedOriginURLs: string;
   const AAllowsCredentials: Boolean;
   const AExposeHeaders: string);
+var
+  lAllowOrigin: string;
 begin
-  AContext.Response.SetCustomHeader('Access-Control-Allow-Origin', AAllowedOriginURLs);
-  if AAllowsCredentials then
+  // Reflect the request Origin against the configured list instead of emitting
+  // the whole (possibly multi-value) configured string verbatim, which is an
+  // invalid header and, with '*' + credentials, the forbidden CORS combo.
+  lAllowOrigin := MVCMatchCORSOrigin(AAllowedOriginURLs, AContext.Request.Headers['Origin']);
+  if lAllowOrigin <> '' then
+    AContext.Response.SetCustomHeader('Access-Control-Allow-Origin', lAllowOrigin);
+  // Never advertise credentials for a wildcard origin (the browser would reject
+  // it, and honouring it elsewhere is a cross-origin credential leak).
+  if AAllowsCredentials and (lAllowOrigin <> '') and (lAllowOrigin <> '*') then
     AContext.Response.SetCustomHeader('Access-Control-Allow-Credentials', 'true');
   if AExposeHeaders <> '' then
     AContext.Response.SetCustomHeader('Access-Control-Expose-Headers', AExposeHeaders);

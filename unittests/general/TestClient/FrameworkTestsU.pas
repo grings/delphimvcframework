@@ -34,7 +34,7 @@ uses
   MVCFramework, Data.DB, System.SysUtils, MVCFramework.JWT,
   MVCFramework.Serializer.Intf, MVCFramework.Serializer.Defaults,
   MVCFramework.MultiMap, MVCFramework.Commons, MVCFramework.Serializer.Commons,
-  MVCFramework.Crypt.Utils;
+  MVCFramework.Crypt.Utils, MVCFramework.Filters, MVCFramework.MinimalAPI;
 
 type
 
@@ -326,6 +326,17 @@ type
     procedure SiblingDirectoryEscapeIsBlocked;
     [Test]
     procedure LegitFileInsideDocRootIsServed;
+  end;
+
+  [TestFixture]
+  TTestSecurityHelpers = class(TObject)
+  public
+    [Test]
+    procedure MVCStripCRLF_RemovesCRandLF;
+    [Test]
+    procedure MVCMatchCORSOrigin_ReflectsOnlyMatchingOrigin;
+    [Test]
+    procedure TMVCFormFile_SafeFileName_StripsPathComponents;
   end;
 
 
@@ -2627,6 +2638,50 @@ begin
   end;
 end;
 
+{ TTestSecurityHelpers }
+
+procedure TTestSecurityHelpers.MVCStripCRLF_RemovesCRandLF;
+begin
+  // A CR/LF in a header value must not survive into the response, otherwise it
+  // injects a new header (HTTP response splitting).
+  Assert.AreEqual('abcX-Injected: evil', MVCStripCRLF('abc'#13#10'X-Injected: evil'));
+  Assert.AreEqual('abc', MVCStripCRLF('abc'#13));
+  Assert.AreEqual('abc', MVCStripCRLF('abc'#10));
+  Assert.AreEqual('a normal value', MVCStripCRLF('a normal value'));
+end;
+
+procedure TTestSecurityHelpers.MVCMatchCORSOrigin_ReflectsOnlyMatchingOrigin;
+begin
+  // A matching origin is echoed back; an unlisted one yields no ACAO; a
+  // configured wildcard yields '*'; the whole list is never emitted verbatim.
+  Assert.AreEqual('https://b.com', MVCMatchCORSOrigin('https://a.com, https://b.com', 'https://b.com'));
+  Assert.AreEqual('', MVCMatchCORSOrigin('https://a.com, https://b.com', 'https://evil.com'),
+    'an unlisted origin must not be reflected');
+  Assert.AreEqual('*', MVCMatchCORSOrigin('*', 'https://anything.example'));
+  Assert.AreEqual('', MVCMatchCORSOrigin('https://a.com', ''), 'no Origin header -> no ACAO');
+end;
+
+procedure TTestSecurityHelpers.TMVCFormFile_SafeFileName_StripsPathComponents;
+  function SafeNameFor(const AClientName: string): string;
+  var
+    lFile: TMVCFormFile;
+  begin
+    lFile := TMVCFormFile.Create('field', AClientName, 'application/octet-stream', nil);
+    try
+      Result := lFile.SafeFileName;
+    finally
+      lFile.Free;
+    end;
+  end;
+begin
+  // The attacker-controlled filename must never carry directory components.
+  Assert.AreEqual('evil.exe', SafeNameFor('..\..\..\windows\system32\evil.exe'));
+  Assert.AreEqual('passwd', SafeNameFor('../../etc/passwd'));
+  Assert.AreEqual('path.txt', SafeNameFor('C:\abs\path.txt'));
+  Assert.AreEqual('normal.txt', SafeNameFor('normal.txt'));
+  Assert.AreEqual('', SafeNameFor('..'));
+end;
+
 { TTestStaticFilesTraversal }
 
 procedure TTestStaticFilesTraversal.SiblingDirectoryEscapeIsBlocked;
@@ -2715,6 +2770,7 @@ TDUnitX.RegisterTestFixture(TTestSqids);
 TDUnitX.RegisterTestFixture(TTestRQLCompiler);
 TDUnitX.RegisterTestFixture(TTestGenericNullables);
 TDUnitX.RegisterTestFixture(TTestStaticFilesTraversal);
+TDUnitX.RegisterTestFixture(TTestSecurityHelpers);
 
 finalization
 
