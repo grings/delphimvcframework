@@ -817,22 +817,12 @@ begin
 end;
 
 function TMVCHttpSysRequest.ClientIp: string;
-var
-  lValue: string;
-  function GetFirst(const Value: string): string;
-  begin
-    Result := Value.Split([',', ';'])[0].Trim();
-  end;
 begin
-  lValue := GetHeader('X-Forwarded-For');
-  if not lValue.IsEmpty then
-    Exit(GetFirst(lValue));
-
-  lValue := GetHeader('X-Real-IP');
-  if not lValue.IsEmpty then
-    Exit(GetFirst(lValue));
-
-  Result := FClientIpStr;
+  Result := MVCResolveClientIP(
+    GetHeader('X-Forwarded-For'),
+    GetHeader('X-Real-IP'),
+    FClientIpStr,
+    MVCTrustProxyForwardedHeaders);
 end;
 
 function TMVCHttpSysRequest.ClientPreferredLanguage: String;

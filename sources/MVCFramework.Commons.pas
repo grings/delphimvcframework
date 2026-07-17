@@ -676,6 +676,24 @@ function IP2Long(const AIP: string): UInt32; inline;
 /// extra HTTP header when used as a header name or value (response splitting).</summary>
 function MVCStripCRLF(const AValue: string): string;
 
+/// <summary>Resolves the client IP. X-Forwarded-For / X-Real-IP are only
+/// honoured when ATrustProxyHeaders is True, otherwise the direct peer IP is
+/// used — a client can forge those headers, so trusting them without a proxy
+/// in front spoofs the IP (rate-limit bypass, poisoned audit logs).</summary>
+function MVCResolveClientIP(const AForwardedFor, ARealIP, APeerIP: string;
+  const ATrustProxyHeaders: Boolean): string;
+
+/// <summary>Masks a secret-carrying header value (Authorization, Cookie, ...)
+/// for logging: keeps the scheme/first token for debugging and replaces the
+/// credential with ***. Returns '' for an empty value.</summary>
+function MVCRedactSecret(const AValue: string): string;
+
+var
+  /// <summary>When True, MVCResolveClientIP honours X-Forwarded-For / X-Real-IP.
+  /// Default False (secure): only enable it when a trusted reverse proxy that
+  /// sets these headers is actually in front of the server.</summary>
+  MVCTrustProxyForwardedHeaders: Boolean = False;
+
 function B64Encode(const aValue: string): string; overload;
 function B64Encode(const aValue: TBytes): string; overload;
 function B64Decode(const aValue: string): string;
@@ -933,6 +951,36 @@ end;
 function MVCStripCRLF(const AValue: string): string;
 begin
   Result := AValue.Replace(#13, '', [rfReplaceAll]).Replace(#10, '', [rfReplaceAll]);
+end;
+
+function MVCResolveClientIP(const AForwardedFor, ARealIP, APeerIP: string;
+  const ATrustProxyHeaders: Boolean): string;
+  function FirstHop(const AValue: string): string;
+  begin
+    Result := AValue.Split([',', ';'])[0].Trim;
+  end;
+begin
+  if ATrustProxyHeaders then
+  begin
+    if AForwardedFor.Trim <> '' then
+      Exit(FirstHop(AForwardedFor));
+    if ARealIP.Trim <> '' then
+      Exit(FirstHop(ARealIP));
+  end;
+  Result := APeerIP;
+end;
+
+function MVCRedactSecret(const AValue: string): string;
+var
+  lSpacePos: Integer;
+begin
+  if AValue.Trim = '' then
+    Exit('');
+  lSpacePos := AValue.IndexOf(' ');
+  if lSpacePos > 0 then
+    Result := AValue.Substring(0, lSpacePos) + ' ***' // keep the scheme
+  else
+    Result := '***';
 end;
 
 function IP2Long(const AIP: string): Cardinal;

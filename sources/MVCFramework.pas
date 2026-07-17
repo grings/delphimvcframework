@@ -3758,16 +3758,22 @@ end;
 procedure TMVCEngine.ResponseErrorPage(const AException: Exception; const ARequest: TWebRequest;
 const AResponse: TWebResponse);
 begin
+  // An error page must report a 5xx status, not 200 (a 200 hides the failure
+  // from clients and monitoring).
+  AResponse.StatusCode := http_status.InternalServerError;
+  AResponse.ContentType := TMVCMediaType.TEXT_PLAIN;
+  {$IFDEF DEBUG}
   AResponse.SetCustomHeader('x-mvc-error', AException.Classname + ': ' + AException.Message);
-  AResponse.StatusCode := http_status.OK;
-
-  begin
-    AResponse.ContentType := TMVCMediaType.TEXT_PLAIN;
-    AResponse.Content := Config[TMVCConfigKey.ServerName] + ' ERROR:' + sLineBreak +
-      'Exception raised of class: ' + AException.Classname + sLineBreak +
-      '***********************************************' + sLineBreak + AException.Message +
-      sLineBreak + '***********************************************';
-  end;
+  AResponse.Content := Config[TMVCConfigKey.ServerName] + ' ERROR:' + sLineBreak +
+    'Exception raised of class: ' + AException.Classname + sLineBreak +
+    '***********************************************' + sLineBreak + AException.Message +
+    sLineBreak + '***********************************************';
+  {$ELSE}
+  // Do not leak the exception class/message to the client in production; log it
+  // server-side instead.
+  LogException(AException, 'Unhandled exception rendered by ResponseErrorPage');
+  AResponse.Content := Config[TMVCConfigKey.ServerName] + ' ERROR: Internal Server Error';
+  {$ENDIF}
 end;
 
 procedure TMVCEngine.SaveCacheConfigValues;
@@ -5275,7 +5281,13 @@ begin
     try
       R.StatusCode := GetContext.Response.StatusCode;
       R.Message := AException.Message;
+      // The internal exception class name is reconnaissance for an attacker and
+      // is not part of the API contract; expose it only in DEBUG builds.
+      {$IFDEF DEBUG}
       R.Classname := AException.Classname;
+      {$ELSE}
+      R.Classname := '';
+      {$ENDIF}
       if AException is EMVCException then
       begin
         R.AppErrorCode := EMVCException(AException).ApplicationErrorCode;

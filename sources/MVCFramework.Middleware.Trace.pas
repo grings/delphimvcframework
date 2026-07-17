@@ -77,6 +77,35 @@ uses
   System.Diagnostics,
   System.SyncObjs;
 
+function RedactedCustomHeaders(const AHeaders: TStrings): string;
+  function IsSensitive(const AName: string): Boolean;
+  begin
+    Result := SameText(AName, 'Authorization') or SameText(AName, 'Proxy-Authorization')
+      or SameText(AName, 'Cookie') or SameText(AName, 'Set-Cookie');
+  end;
+var
+  I: Integer;
+  lName, lValue: string;
+begin
+  Result := '';
+  for I := 0 to AHeaders.Count - 1 do
+  begin
+    lName := AHeaders.Names[I];
+    if lName = '' then
+      lValue := AHeaders[I]
+    else
+    begin
+      lValue := AHeaders.ValueFromIndex[I];
+      if IsSensitive(lName) then
+        lValue := MVCRedactSecret(lValue);
+      lValue := lName + '=' + lValue;
+    end;
+    if Result <> '' then
+      Result := Result + ' | ';
+    Result := Result + lValue;
+  end;
+end;
+
 const
   // keys used to carry per-request state across the middleware hooks
   TRACE_DATA_REQUESTID = '__trace_request_id';
@@ -143,7 +172,7 @@ begin
     lReq.ContentLength,
     lReq.Accept,
     lReq.UserAgent,
-    lReq.Authorization
+    MVCRedactSecret(lReq.Authorization)
     ], fLogTag);
 
   if AContext.Request.HTTPMethod in [httpPOST, httpPUT, httpPATCH] then
@@ -182,7 +211,7 @@ begin
   Log.Debug('%s [AFTER ACTION][RESPONSE][STATUS] %d: %s',
     [RequestId(AContext), AContext.Response.StatusCode, AContext.Response.ReasonString], fLogTag);
   Log.Debug('%s [AFTER ACTION][RESPONSE][CUSTOM HEADERS] %s',
-    [RequestId(AContext), string.Join(' | ', AContext.Response.CustomHeaders.ToStringArray)], fLogTag);
+    [RequestId(AContext), RedactedCustomHeaders(AContext.Response.CustomHeaders)], fLogTag);
   Log.Debug('%s [AFTER ACTION][RESPONSE][CONTENT-TYPE] %s',
     [RequestId(AContext), AContext.Response.ContentType], fLogTag);
 

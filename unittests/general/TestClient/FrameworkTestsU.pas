@@ -337,6 +337,10 @@ type
     procedure MVCMatchCORSOrigin_ReflectsOnlyMatchingOrigin;
     [Test]
     procedure TMVCFormFile_SafeFileName_StripsPathComponents;
+    [Test]
+    procedure MVCResolveClientIP_IgnoresForwardedHeadersUnlessTrusted;
+    [Test]
+    procedure MVCRedactSecret_MasksCredentialKeepsScheme;
   end;
 
 
@@ -2680,6 +2684,27 @@ begin
   Assert.AreEqual('path.txt', SafeNameFor('C:\abs\path.txt'));
   Assert.AreEqual('normal.txt', SafeNameFor('normal.txt'));
   Assert.AreEqual('', SafeNameFor('..'));
+end;
+
+procedure TTestSecurityHelpers.MVCResolveClientIP_IgnoresForwardedHeadersUnlessTrusted;
+begin
+  // Not trusted (default): forged X-Forwarded-For / X-Real-IP are ignored, the
+  // real peer IP wins.
+  Assert.AreEqual('10.0.0.1', MVCResolveClientIP('1.2.3.4', '9.9.9.9', '10.0.0.1', False),
+    'forwarded headers must be ignored when proxies are not trusted');
+  // Trusted: the first X-Forwarded-For hop wins, then X-Real-IP, then the peer.
+  Assert.AreEqual('1.2.3.4', MVCResolveClientIP('1.2.3.4, 5.6.7.8', '9.9.9.9', '10.0.0.1', True));
+  Assert.AreEqual('9.9.9.9', MVCResolveClientIP('', '9.9.9.9', '10.0.0.1', True));
+  Assert.AreEqual('10.0.0.1', MVCResolveClientIP('', '', '10.0.0.1', True));
+end;
+
+procedure TTestSecurityHelpers.MVCRedactSecret_MasksCredentialKeepsScheme;
+begin
+  // The credential must never survive into a log; the scheme is kept for triage.
+  Assert.AreEqual('Bearer ***', MVCRedactSecret('Bearer eyJhbGciOiJIUzI1NiJ9.payload.sig'));
+  Assert.AreEqual('Basic ***', MVCRedactSecret('Basic dXNlcjpwYXNzd29yZA=='));
+  Assert.AreEqual('***', MVCRedactSecret('rawtokenwithoutscheme'));
+  Assert.AreEqual('', MVCRedactSecret(''));
 end;
 
 { TTestStaticFilesTraversal }

@@ -211,27 +211,13 @@ begin
 end;
 
 function TMVCWebBrokerRequest.ClientIp: string;
-var
-  lValue: string;
-  function GetFirst(const Value: String): String; inline;
-  begin
-    Result := Value.Split([',',';'])[0].Trim();
-  end;
 begin
   // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Forwarded-For
-  lValue := String(FWebRequest.GetFieldByName('X-Forwarded-For'));
-  if not lValue.IsEmpty then
-  begin
-    Exit(GetFirst(lValue));
-  end;
-
-  lValue := String(FWebRequest.GetFieldByName('X-Real-IP'));
-  if not lValue.IsEmpty then
-  begin
-    Exit(GetFirst(lValue));
-  end;
-
-  Result := FWebRequest.RemoteAddr;
+  Result := MVCResolveClientIP(
+    String(FWebRequest.GetFieldByName('X-Forwarded-For')),
+    String(FWebRequest.GetFieldByName('X-Real-IP')),
+    FWebRequest.RemoteAddr,
+    MVCTrustProxyForwardedHeaders);
 end;
 
 function TMVCWebBrokerRequest.ClientPreferredLanguage: String;

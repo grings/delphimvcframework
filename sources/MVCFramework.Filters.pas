@@ -1071,7 +1071,12 @@ begin
   // invalid header and, with '*' + credentials, the forbidden CORS combo.
   lAllowOrigin := MVCMatchCORSOrigin(AAllowedOriginURLs, AContext.Request.Headers['Origin']);
   if lAllowOrigin <> '' then
+  begin
     AContext.Response.SetCustomHeader('Access-Control-Allow-Origin', lAllowOrigin);
+    // The ACAO value depends on the request Origin, so caches must vary on it.
+    if lAllowOrigin <> '*' then
+      AContext.Response.SetCustomHeader('Vary', 'Origin');
+  end;
   // Never advertise credentials for a wildcard origin (the browser would reject
   // it, and honouring it elsewhere is a cross-origin credential leak).
   if AAllowsCredentials and (lAllowOrigin <> '') and (lAllowOrigin <> '*') then

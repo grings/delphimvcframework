@@ -630,22 +630,12 @@ begin
 end;
 
 function TMVCIndyDirectRequest.ClientIp: string;
-var
-  lValue: string;
-  function GetFirst(const Value: String): String; inline;
-  begin
-    Result := Value.Split([',',';'])[0].Trim();
-  end;
 begin
-  lValue := FRequestInfo.RawHeaders.Values['X-Forwarded-For'];
-  if not lValue.IsEmpty then
-    Exit(GetFirst(lValue));
-
-  lValue := FRequestInfo.RawHeaders.Values['X-Real-IP'];
-  if not lValue.IsEmpty then
-    Exit(GetFirst(lValue));
-
-  Result := FContext.Binding.PeerIP;
+  Result := MVCResolveClientIP(
+    FRequestInfo.RawHeaders.Values['X-Forwarded-For'],
+    FRequestInfo.RawHeaders.Values['X-Real-IP'],
+    FContext.Binding.PeerIP,
+    MVCTrustProxyForwardedHeaders);
 end;
 
 function TMVCIndyDirectRequest.ClientPreferredLanguage: String;
