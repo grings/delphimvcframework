@@ -201,6 +201,14 @@ type
     [MVCHTTPMethod([httpGET])]
     function GetStreamedDataSetChunked: TMVCStreamedResponse;
 
+    // C1 regression: a *function* action whose response is produced by a
+    // streaming writer. After the writer sends the whole body the dispatcher
+    // must NOT try to render the function's return value (that path used to
+    // dereference a nil TypeInfo -> AV on an already-sent reply).
+    [MVCPath('/streaming/functionwriter')]
+    [MVCHTTPMethod([httpGET])]
+    function StreamViaFunctionWriter: JsonDataObjects.TJsonArray;
+
     [MVCPath('/wrappedpeople')]
     [MVCHTTPMethod([httpGET])]
     procedure TestGetWrappedPeople;
@@ -1253,6 +1261,33 @@ begin
   finally
     lConn.Free;
   end;
+end;
+
+function TTestServerController.StreamViaFunctionWriter: JsonDataObjects.TJsonArray;
+var
+  lWriter: TMVCJSONArrayWriter;
+begin
+  Result := nil;
+  try
+    lWriter := TMVCJSONArrayWriter.Create(Context);
+  except
+    on EMVCException do
+    begin
+      // Host without an Indy streaming socket (HTTP.sys): buffered fallback so
+      // the endpoint still returns the same JSON array on every host.
+      Result := JsonDataObjects.TJsonArray.Create;
+      Result.AddObject.I['n'] := 1;
+      Result.AddObject.I['n'] := 2;
+      Exit;
+    end;
+  end;
+  try
+    lWriter.Send('{"n":1}');
+    lWriter.Send('{"n":2}');
+  finally
+    lWriter.Free; // emits the closing "]" and closes the socket
+  end;
+  // Response already fully streamed; the function result must be ignored.
 end;
 
 function TTestServerController.GetStreamedDataSetChunked: TMVCStreamedResponse;

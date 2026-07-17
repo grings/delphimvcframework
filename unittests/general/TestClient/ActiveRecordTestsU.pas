@@ -276,6 +276,14 @@ type
     property Descr: string read fDescr write fDescr;
   end;
 
+  // In-memory UnitOfWork test (no DB): Merge + Apply with Handled:=True.
+  [TestFixture]
+  TTestUnitOfWorkMerge = class(TObject)
+  public
+    [Test]
+    procedure RegisterUpdateDoesNotTruncateInt64PK;
+  end;
+
 const
   _CON_DEF_NAME_SQLITE = 'SQLITECONNECTION';
   _CON_DEF_NAME_FIREBIRD = 'FIREBIRDCONNECTION';
@@ -286,6 +294,51 @@ var
   SQLiteFileName: string = 'sqlitetest.db';
   GDBTemplateFileName: string = '';
   GPGIsInitialized: boolean = False;
+
+procedure TTestUnitOfWorkMerge.RegisterUpdateDoesNotTruncateInt64PK;
+var
+  lCurrent, lNew: TObjectList<TCustomerWithNullablePK>;
+  lDeleted, lUpdated: TList<Int64>;
+  lHiPK: Int64;
+  lExec: IMVCMultiExecutor<TCustomerWithNullablePK>;
+  lE1, lE2, lN1: TCustomerWithNullablePK;
+begin
+  // Two current rows whose Int64 PKs share the same low 32 bits (5 and 2^32+5).
+  // Merge(delete+update): the hi-PK row is updated (must be removed from the
+  // delete set); the pk=5 row is not in the new list (must stay deleted).
+  // RegisterUpdate must match on the full Int64, not a 32-bit-truncated value.
+  lHiPK := Int64($100000000) + 5; // 4294967301
+  lCurrent := TObjectList<TCustomerWithNullablePK>.Create(True);
+  lNew := TObjectList<TCustomerWithNullablePK>.Create(True);
+  lDeleted := TList<Int64>.Create;
+  lUpdated := TList<Int64>.Create;
+  try
+    lE2 := TCustomerWithNullablePK.Create; lE2.ID := 5; lCurrent.Add(lE2);
+    lE1 := TCustomerWithNullablePK.Create; lE1.ID := lHiPK; lCurrent.Add(lE1);
+    lN1 := TCustomerWithNullablePK.Create; lN1.ID := lHiPK; lNew.Add(lN1);
+
+    lExec := TMVCActiveRecord.Merge<TCustomerWithNullablePK>(lCurrent, lNew);
+    lExec.Apply(
+      procedure(const Obj: TCustomerWithNullablePK; const Action: TMVCEntityAction; var Handled: Boolean)
+      begin
+        Handled := True; // never touch a database
+        if Action = eaDelete then
+          lDeleted.Add(Obj.ID)
+        else if Action = eaUpdate then
+          lUpdated.Add(Obj.ID);
+      end);
+    lExec := nil; // release the UnitOfWork (non-owning lists) before freeing entities
+
+    Assert.IsTrue(lUpdated.Contains(lHiPK), 'the hi-PK entity must be scheduled for UPDATE');
+    Assert.IsTrue(lDeleted.Contains(5), 'the pk=5 entity (not in new list) must remain scheduled for DELETE');
+    Assert.IsFalse(lDeleted.Contains(lHiPK), 'the updated hi-PK entity must NOT also be deleted');
+  finally
+    lDeleted.Free;
+    lUpdated.Free;
+    lNew.Free;
+    lCurrent.Free;
+  end;
+end;
 
 procedure TTestActiveRecordSQLite.AfterDataLoad;
 begin
@@ -3151,6 +3204,7 @@ initialization
 TDUnitX.RegisterTestFixture(TTestActiveRecordSQLite);
 TDUnitX.RegisterTestFixture(TTestActiveRecordFirebird);
 TDUnitX.RegisterTestFixture(TTestActiveRecordPostgreSQL);
+TDUnitX.RegisterTestFixture(TTestUnitOfWorkMerge);
 
 finalization
 

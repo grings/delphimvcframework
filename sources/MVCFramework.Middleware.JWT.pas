@@ -479,6 +479,12 @@ begin
   // place. (Removing the default outright is an API break, deferred to v4.)
   if ASecret = 'D3lph1MVCFram3w0rk' then
     LogW('JWT middleware is using the built-in default secret. Set a strong, unique secret in production: tokens signed with the shipped default can be forged.');
+  // Insecure default: an empty claims-to-check set means exp/nbf/iat are NOT
+  // validated, so expired tokens are accepted indefinitely. Warn loudly.
+  // (Enforcing by default would reject tokens issued without these claims, an
+  // API break deferred to v4.)
+  if AClaimsToCheck = [] then
+    LogW('JWT middleware constructed with an empty claims-to-check set: token expiration (exp) is NOT validated, tokens never expire. Pass [TJWTCheckableClaim.ExpirationTime] to enforce expiration.');
   FLoginURLSegment := ALoginURLSegment;
   FLeewaySeconds := ALeewaySeconds;
   FAuthorizationHeaderName := TMVCJWTDefaults.AUTHORIZATION_HEADER;
@@ -510,6 +516,8 @@ begin
   FAuthenticationHandler := AAuthenticationHandler;
   FSetupJWTClaims := AConfigClaims;
   FClaimsToChecks := AClaimsToCheck;
+  if AClaimsToCheck = [] then
+    LogW('JWT middleware constructed with an empty claims-to-check set: token expiration (exp) is NOT validated, tokens never expire. Pass [TJWTCheckableClaim.ExpirationTime] to enforce expiration.');
   FSecret := '';
   FLoginURLSegment := ALoginURLSegment;
   FLeewaySeconds := ALeewaySeconds;

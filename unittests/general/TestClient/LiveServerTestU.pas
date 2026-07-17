@@ -72,6 +72,9 @@ type
     [Test]
     procedure TestReqWithParams;
 
+    [Test]
+    procedure TestFunctionActionWithStreamingWriter;
+
     // URL_MAPPED_PARAMS_ALLOWED_CHARS = ' ������@\[\]\{\}\(\)\=;&#\.\_\,%\w\d\x2D\x3A';
     [Test]
     [TestCase('1', ' �,�')]
@@ -578,6 +581,20 @@ procedure TBaseServerTest.TearDown;
 begin
   inherited;
   RESTClient := nil;
+end;
+
+procedure TServerTest.TestFunctionActionWithStreamingWriter;
+var
+  res: IMVCRESTResponse;
+begin
+  // C1 regression: a function action whose response is produced by a streaming
+  // writer must return the streamed body cleanly. The dispatcher previously
+  // tried to render the (emptied) function result and AV'd after the reply was
+  // already on the wire.
+  res := RESTClient.Get('/streaming/functionwriter');
+  Assert.areEqual<Integer>(HTTP_STATUS.OK, res.StatusCode);
+  Assert.Contains(res.Content, '"n":1');
+  Assert.Contains(res.Content, '"n":2');
 end;
 
 procedure TServerTest.TestActionFiltersOnBeforeAction;

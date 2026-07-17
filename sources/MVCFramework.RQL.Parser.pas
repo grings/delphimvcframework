@@ -92,7 +92,7 @@ type
     fMapping: TMVCFieldsMapping;
   protected
     function GetDatabaseFieldName(const RQLPropertyName: string; const UsePropertyNameIfAttributeDoesntExists: Boolean = False): string;
-    function QuoteStringArray(const aStringArray: TArray<string>): TArray<string>;
+    function QuoteStringArray(const aStringArray: TArray<string>): TArray<string>; virtual;
     function RQLCustom2SQL(const aRQLCustom: TRQLCustom): string; virtual; abstract;
     procedure AdjustAST(const aRQLAST: TRQLAbstractSyntaxTree); virtual;
     /// <summary>True if a non-empty field mapping is available to the

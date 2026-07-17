@@ -2989,11 +2989,16 @@ begin
                     // is still required to avoid leaks.
                     if AContext.Response.StreamingHandled then
                     begin
+                      // A streaming writer already produced the whole response;
+                      // free any returned object (to avoid a leak) and skip the
+                      // render path entirely. Falling through with TValue.Empty
+                      // would hit the "cannot serialize" else and dereference a
+                      // nil TypeInfo -> access violation on an already-sent reply.
                       if (lInvokeResult.Kind = tkClass) and
                          (lInvokeResult.AsObject <> nil) then
                         lInvokeResult.AsObject.Free;
-                      lInvokeResult := TValue.Empty;
-                    end;
+                    end
+                    else
                     case lInvokeResult.Kind of
                       tkInterface:
                       begin
@@ -4042,8 +4047,13 @@ begin
   end;
 
   lFileName := TPath.GetFullPath(lFileName);
-  if not lFileName.StartsWith(lWebRoot) then
-  // AVOID PATH TRAVERSAL
+  // AVOID PATH TRAVERSAL: the resolved file must live *under* the web root.
+  // Compare against the web root with a trailing separator, otherwise a sibling
+  // directory whose name merely starts with the web-root folder name (e.g.
+  // "wwwroot-secret" vs "wwwroot") would pass the prefix test. On Windows the
+  // file system is case-insensitive, so the comparison must be too.
+  if not lFileName.StartsWith(IncludeTrailingPathDelimiter(lWebRoot),
+    {$IFDEF MSWINDOWS}True{$ELSE}False{$ENDIF}) then
   begin
     AIsDirectoryTraversalAttack := True;
     Exit(False);

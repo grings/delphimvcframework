@@ -5958,12 +5958,24 @@ end;
 
 procedure TMVCUnitOfWork<T>.RegisterUpdate(const Value: T);
 var
-  lCurrPKValue: Integer;
   lFoundAtIndex: Integer;
+  lFound: Boolean;
 begin
   fListToUpdate.Add(Value);
-  lCurrPKValue := Value.GetPK.AsInteger;
-  if KeyExistsInt(fListToDelete, lCurrPKValue, lFoundAtIndex) then
+  // Cancel any pending delete of the same row. Dispatch on the PK type exactly
+  // like Merge does, otherwise an Int64 PK is silently truncated to 32 bits and
+  // a different row (colliding in its low 32 bits) can be un-deleted.
+  case Value.GetPrimaryKeyFieldType of
+    ftString:
+      lFound := KeyExistsString(fListToDelete, Value.GetPK.AsString, lFoundAtIndex);
+    ftInteger:
+      lFound := KeyExistsInt(fListToDelete, Value.GetPK.AsInteger, lFoundAtIndex);
+    ftLargeInt:
+      lFound := KeyExistsInt64(fListToDelete, Value.GetPK.AsInt64, lFoundAtIndex);
+  else
+    lFound := False;
+  end;
+  if lFound then
   begin
     fListToDelete.Delete(lFoundAtIndex);
   end;

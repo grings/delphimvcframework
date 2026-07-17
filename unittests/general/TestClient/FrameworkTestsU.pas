@@ -308,6 +308,8 @@ type
   public
     [Test]
     procedure TestFileFixtures;
+    [Test]
+    procedure Test_MySQL_EscapesBackslash_PreventsSQLInjection;
   end;
 
   [TestFixture]
@@ -315,6 +317,15 @@ type
   public
     [Test]
     procedure TestGenericNullables;
+  end;
+
+  [TestFixture]
+  TTestStaticFilesTraversal = class(TObject)
+  public
+    [Test]
+    procedure SiblingDirectoryEscapeIsBlocked;
+    [Test]
+    procedure LegitFileInsideDocRootIsServed;
   end;
 
 
@@ -2590,6 +2601,79 @@ begin
   end;
 end;
 
+procedure TTestRQLCompiler.Test_MySQL_EscapesBackslash_PreventsSQLInjection;
+var
+  lParser: TRQL2SQL;
+  lComp: TRQLCompiler;
+  lSQL: string;
+begin
+  // On MySQL/MariaDB a backslash is a string-escape char under the default
+  // sql_mode. A value such as  \'  would otherwise break out of the string
+  // literal (the \' becomes a literal quote, then the doubled quote closes
+  // the string). The compiler must emit '\\' for every backslash so the
+  // value can never terminate the literal early.
+  lParser := TRQL2SQL.Create;
+  try
+    lComp := TRQLCompilerRegistry.Instance.GetCompiler('mysql').Create(nil);
+    try
+      lParser.Execute('eq(nome,"a\'' OR 1=1")', lSQL, lComp);
+      Assert.IsTrue(lSQL.Contains('a\\'),
+        'MySQL RQL string values must double backslashes to prevent SQL injection; got: ' + lSQL);
+    finally
+      lComp.Free;
+    end;
+  finally
+    lParser.Free;
+  end;
+end;
+
+{ TTestStaticFilesTraversal }
+
+procedure TTestStaticFilesTraversal.SiblingDirectoryEscapeIsBlocked;
+var
+  lBase, lDocRoot, lSibling, lRealFile: string;
+  lIsTraversal, lFound: Boolean;
+begin
+  // Doc root "www" and a sibling "www-secret" share a string prefix. A request
+  // for ../www-secret/secret.txt resolves outside the doc root but the naive
+  // StartsWith(docroot) check (no path separator) accepts it. Must be blocked.
+  lBase := TPath.Combine(TPath.GetTempPath, 'dmvc_trav_' +
+    TGUID.NewGuid.ToString.Replace('{', '').Replace('}', ''));
+  lDocRoot := TPath.Combine(lBase, 'www');
+  lSibling := TPath.Combine(lBase, 'www-secret');
+  TDirectory.CreateDirectory(lDocRoot);
+  TDirectory.CreateDirectory(lSibling);
+  TFile.WriteAllText(TPath.Combine(lSibling, 'secret.txt'), 'TOP SECRET');
+  try
+    lFound := TMVCStaticContents.IsStaticFile(lDocRoot, '../www-secret/secret.txt',
+      lRealFile, lIsTraversal);
+    Assert.IsTrue(lIsTraversal,
+      'Escaping to a sibling dir sharing the doc-root prefix must be flagged as traversal');
+    Assert.IsFalse(lFound, 'A file outside the doc root must not be served');
+  finally
+    TDirectory.Delete(lBase, True);
+  end;
+end;
+
+procedure TTestStaticFilesTraversal.LegitFileInsideDocRootIsServed;
+var
+  lBase, lDocRoot, lRealFile: string;
+  lIsTraversal, lFound: Boolean;
+begin
+  lBase := TPath.Combine(TPath.GetTempPath, 'dmvc_trav_' +
+    TGUID.NewGuid.ToString.Replace('{', '').Replace('}', ''));
+  lDocRoot := TPath.Combine(lBase, 'www');
+  TDirectory.CreateDirectory(lDocRoot);
+  TFile.WriteAllText(TPath.Combine(lDocRoot, 'index.html'), '<html/>');
+  try
+    lFound := TMVCStaticContents.IsStaticFile(lDocRoot, 'index.html', lRealFile, lIsTraversal);
+    Assert.IsFalse(lIsTraversal, 'A file inside the doc root must not be flagged as traversal');
+    Assert.IsTrue(lFound, 'A file inside the doc root must be served');
+  finally
+    TDirectory.Delete(lBase, True);
+  end;
+end;
+
 { TTestGenericNullables }
 
 procedure TTestGenericNullables.TestGenericNullables;
@@ -2630,6 +2714,7 @@ TDUnitX.RegisterTestFixture(TTestDotEnvParser);
 TDUnitX.RegisterTestFixture(TTestSqids);
 TDUnitX.RegisterTestFixture(TTestRQLCompiler);
 TDUnitX.RegisterTestFixture(TTestGenericNullables);
+TDUnitX.RegisterTestFixture(TTestStaticFilesTraversal);
 
 finalization
 
