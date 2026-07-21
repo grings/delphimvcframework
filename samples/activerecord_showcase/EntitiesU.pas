@@ -84,6 +84,25 @@ type
     property Price: Currency read fPrezzo write fPrezzo;
   end;
 
+  // Composite (multi-column) primary key: an order line is identified by the
+  // pair (order_id, product_id). Mark every column of the key with foPrimaryKey.
+  // Address such rows with GetByPKs / LoadByPKs (one value per PK column).
+  [MVCNameCase(ncLowerCase)]
+  [MVCTable('order_items')]
+  TOrderItem = class(TCustomEntity)
+  private
+    [MVCTableField('order_id', [foPrimaryKey])]
+    fOrderID: Integer;
+    [MVCTableField('product_id', [foPrimaryKey])]
+    fProductID: Integer;
+    [MVCTableField('quantity')]
+    fQuantity: Integer;
+  public
+    property OrderID: Integer read fOrderID write fOrderID;
+    property ProductID: Integer read fProductID write fProductID;
+    property Quantity: Integer read fQuantity write fQuantity;
+  end;
+
   [MVCNameCase(ncLowerCase)]
   [MVCTable('articles')]
   TArticleWithWriteOnlyFields = class(TCustomEntity)

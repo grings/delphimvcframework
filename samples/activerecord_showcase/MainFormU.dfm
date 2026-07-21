@@ -2,7 +2,7 @@ object MainForm: TMainForm
   Left = 0
   Top = 0
   Caption = 'TMVCActiveRecord - ShowCase'
-  ClientHeight = 810
+  ClientHeight = 851
   ClientWidth = 1094
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
@@ -397,5 +397,15 @@ object MainForm: TMainForm
     TabOrder = 39
     WordWrap = True
     OnClick = btnSoftDeleteClick
+  end
+  object btnCompositeKeys: TButton
+    Left = 8
+    Top = 803
+    Width = 257
+    Height = 34
+    Caption = 'Composite (Multiple) Primary Keys'
+    TabOrder = 40
+    WordWrap = True
+    OnClick = btnCompositeKeysClick
   end
 end

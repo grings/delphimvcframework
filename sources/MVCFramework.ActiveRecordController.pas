@@ -39,11 +39,6 @@ uses
   System.Generics.Collections,
   MVCFramework.Serializer.Commons, MVCFramework.Swagger.Commons;
 
-const
-  /// <summary>Separator used in the ($id) URL segment to carry a composite
-  /// primary key, e.g. GET /customers/1;42 for a two-column key.</summary>
-  PK_URL_DELIMITER = ';';
-
 type
 {$SCOPEDENUMS ON}
   TMVCActiveRecordAction = (Create, Retrieve, Update, Delete);
@@ -147,6 +142,52 @@ uses
   JsonDataObjects,
   Data.DB;
 
+// Turns the raw ($id) URL segment into one string value per primary-key column.
+// Single key: the segment IS the value. Composite key: the segment is a JSON
+// array of typed values, e.g. [1,"ACME;01"], which sidesteps any delimiter
+// collision because JSON quotes and escapes string content.
+function ExtractPKValues(const AAR: TMVCActiveRecord; const ASegment: string): TArray<string>;
+var
+  lJSON: TJsonBaseObject;
+  lArr: TJsonArray;
+  I: Integer;
+begin
+  if not AAR.HasCompositePK then
+  begin
+    SetLength(Result, 1);
+    Result[0] := ASegment;
+    Exit;
+  end;
+  try
+    lJSON := TJsonBaseObject.Parse(ASegment);
+  except
+    on E: Exception do
+      raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+        'Composite key must be a JSON array (e.g. [1,"code"]); got: %s', [ASegment]);
+  end;
+  try
+    if not (lJSON is TJsonArray) then
+      raise EMVCException.CreateFmt(HTTP_STATUS.BadRequest,
+        'Composite key must be a JSON array (e.g. [1,"code"]); got: %s', [ASegment]);
+    lArr := TJsonArray(lJSON);
+    SetLength(Result, lArr.Count);
+    for I := 0 to lArr.Count - 1 do
+    begin
+      case lArr.Types[I] of
+        jdtString: Result[I] := lArr.S[I];
+        jdtInt: Result[I] := IntToStr(lArr.I[I]);
+        jdtLong: Result[I] := IntToStr(lArr.L[I]);
+        jdtULong: Result[I] := UIntToStr(lArr.U[I]);
+        jdtBool: Result[I] := BoolToStr(lArr.B[I], True);
+      else
+        Result[I] := lArr.S[I];
+      end;
+    end;
+  finally
+    lJSON.Free;
+  end;
+end;
+
 procedure TMVCActiveRecordController.GetEntities(const entityname: string);
 var
   lARClassRef: TMVCActiveRecordClass;
@@ -201,10 +242,10 @@ begin
           .Add('data', lARResp,
             procedure(const AObject: TObject; const Links: IMVCLinks)
             begin
-              // Self-link keyed on the PK. Composite keys are joined with
-              // PK_URL_DELIMITER; string/GUID keys are now addressable too.
+              // Self-link keyed on the PK: the scalar value for a single key,
+              // or a JSON array for a composite one. String/GUID keys included.
               Links.AddRefLink.Add(HATEOAS.HREF,
-                fURLSegment + '/' + TMVCActiveRecord(AObject).PKAsDelimitedString(PK_URL_DELIMITER));
+                fURLSegment + '/' + TMVCActiveRecord(AObject).PKAsURLSegment);
             end)
           .Add('meta', lStrDict));
       finally
@@ -282,8 +323,8 @@ begin
       Exit;
     end;
 
-    // LoadByPKs handles both a single PK and a composite key ("k1;k2").
-    if lAR.LoadByPKs(string(id).Split([PK_URL_DELIMITER])) then
+    // LoadByPKs handles both a single PK and a composite key (JSON array segment).
+    if lAR.LoadByPKs(ExtractPKValues(lAR, id)) then
     begin
       lResponse := MVCResponseBuilder
           .StatusCode(HTTP_STATUS.OK)
@@ -368,7 +409,7 @@ begin
     Context.Request.BodyFor<TMVCActiveRecord>(lAR);
     lAR.Insert;
     Context.Response.CustomHeaders.Values['X-REF'] :=
-      Context.Request.PathInfo + '/' + lAR.PKAsDelimitedString(PK_URL_DELIMITER);
+      Context.Request.PathInfo + '/' + lAR.PKAsURLSegment;
     if Context.Request.QueryStringParam('refresh').ToLower = 'true' then
     begin
       RenderStatusMessage(HTTP_STATUS.Created, entityname.ToLower + ' created', '', lAR, False);
@@ -413,7 +454,7 @@ begin
       Exit;
     end;
     lAR.CheckAction(TMVCEntityAction.eaUpdate);
-    lPKValues := string(id).Split([PK_URL_DELIMITER]);
+    lPKValues := ExtractPKValues(lAR, id);
     if not lAR.LoadByPKs(lPKValues) then
       raise EMVCException.CreateFmt(HTTP_STATUS.NotFound, 'Cannot find entity %s', [entityname]);
     Context.Request.BodyFor<TMVCActiveRecord>(lAR);
@@ -469,7 +510,7 @@ begin
       HTTP DELETE is an idempotent operation. Invoking it multiple times consecutively must result in
       the same behavior as the first. Meaning: you shouldn't return HTTP 404.
     }
-    lPKValues := string(id).Split([PK_URL_DELIMITER]);
+    lPKValues := ExtractPKValues(lAR, id);
     if lAR.LoadByPKs(lPKValues) then
     begin
       lAR.SetPKs(lPKValues);

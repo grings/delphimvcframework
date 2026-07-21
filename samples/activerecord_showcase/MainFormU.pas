@@ -74,6 +74,7 @@ type
     btnTransaction: TButton;
     btnUseExplicitConnection: TButton;
     btnErrorWith2PKs: TButton;
+    btnCompositeKeys: TButton;
     btnAttrValidation: TButton;
     btnAuditColumns: TButton;
     btnChangeTracking: TButton;
@@ -116,6 +117,7 @@ type
     procedure btnTransactionClick(Sender: TObject);
     procedure btnUseExplicitConnectionClick(Sender: TObject);
     procedure btnErrorWith2PKsClick(Sender: TObject);
+    procedure btnCompositeKeysClick(Sender: TObject);
     procedure btnAttrValidationClick(Sender: TObject);
     procedure btnAuditColumnsClick(Sender: TObject);
     procedure btnChangeTrackingClick(Sender: TObject);
@@ -133,6 +135,7 @@ type
     // they're demonstrating.
     procedure SetupAuditDemoTable;
     procedure SetupSoftDeleteDemoTable;
+    procedure SetupCompositeKeyDemoTable;
     function  SetupRefreshDemoTable: Boolean;
   public
     { Public declarations }
@@ -695,6 +698,80 @@ begin
     lWrongArticle.LoadByPK(1);
   finally
     lWrongArticle.Free;
+  end;
+end;
+
+procedure TMainForm.btnCompositeKeysClick(Sender: TObject);
+var
+  lItem: TOrderItem;
+begin
+  Log('** Composite (multi-column) primary key');
+  Log('  TOrderItem is keyed on (order_id, product_id): two foPrimaryKey columns.');
+  SetupCompositeKeyDemoTable;
+
+  // Two order lines: same order, different products.
+  lItem := TOrderItem.Create;
+  try
+    lItem.OrderID := 100;
+    lItem.ProductID := 5;
+    lItem.Quantity := 3;
+    lItem.Insert;
+    Log('Inserted (order_id=100, product_id=5) qty=3');
+  finally
+    lItem.Free;
+  end;
+
+  lItem := TOrderItem.Create;
+  try
+    lItem.OrderID := 100;
+    lItem.ProductID := 8;
+    lItem.Quantity := 1;
+    lItem.Insert;
+    Log('Inserted (order_id=100, product_id=8) qty=1');
+  finally
+    lItem.Free;
+  end;
+
+  Log(Format('Rows in order_items: %d', [TMVCActiveRecord.Count<TOrderItem>()]));
+
+  // Fetch one row by its FULL key: one value per PK column, in declaration order.
+  lItem := TMVCActiveRecord.GetByPKs<TOrderItem>([100, 5]);
+  try
+    Log(Format('GetByPKs([100,5]) -> qty=%d', [lItem.Quantity]));
+    lItem.Quantity := 10;
+    lItem.Update; // WHERE covers BOTH key columns
+    Log('Updated (100,5) qty -> 10');
+  finally
+    lItem.Free;
+  end;
+
+  // Load into an existing instance with LoadByPKs.
+  lItem := TOrderItem.Create;
+  try
+    if lItem.LoadByPKs([100, 5]) then
+      Log(Format('LoadByPKs([100,5]) -> qty=%d (persisted)', [lItem.Quantity]));
+    lItem.Delete; // deletes only (100,5); the (100,8) sibling survives
+    Log('Deleted (100,5)');
+  finally
+    lItem.Free;
+  end;
+
+  Log(Format('Rows after delete: %d (the (100,8) sibling is untouched)',
+    [TMVCActiveRecord.Count<TOrderItem>()]));
+
+  // Single-value PK APIs are meaningless on a composite key: they raise and
+  // steer you to the *PKs variants instead of silently using only column [0].
+  lItem := TOrderItem.Create;
+  try
+    try
+      lItem.LoadByPK(100);
+      Log('ERROR: LoadByPK should have raised');
+    except
+      on E: EMVCActiveRecord do
+        Log('As expected, LoadByPK(scalar) raised -> ' + E.Message);
+    end;
+  finally
+    lItem.Free;
   end;
 end;
 
@@ -3217,6 +3294,24 @@ begin
   lConn := TMVCActiveRecord.CurrentConnection;
   lConn.ExecSQL(DDL_DROP_IF_EXISTS);
   lConn.ExecSQL(lDDLCreate);
+end;
+
+procedure TMainForm.SetupCompositeKeyDemoTable;
+const
+  DDL_DROP_IF_EXISTS = 'DROP TABLE IF EXISTS order_items';
+var
+  lConn: TFDConnection;
+begin
+  lConn := TMVCActiveRecord.CurrentConnection;
+  lConn.ExecSQL(DDL_DROP_IF_EXISTS);
+  // Table-level PRIMARY KEY(a, b) is portable across the supported backends.
+  lConn.ExecSQL(
+    'CREATE TABLE order_items (' +
+    '  order_id   INTEGER NOT NULL, ' +
+    '  product_id INTEGER NOT NULL, ' +
+    '  quantity   INTEGER NOT NULL, ' +
+    '  PRIMARY KEY (order_id, product_id)' +
+    ')');
 end;
 
 procedure TMainForm.SetupSoftDeleteDemoTable;

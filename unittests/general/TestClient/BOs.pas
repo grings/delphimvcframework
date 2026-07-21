@@ -144,6 +144,44 @@ type
     property Note: string read fNote write fNote;
   end;
 
+  // Natural two-column primary key exposed through TMVCActiveRecordController.
+  // Drives the composite-key auto-CRUD over HTTP (URL segment "k1;k2"). Its table
+  // is created/dropped by the controller test itself.
+  [MVCNameCase(ncLowerCase)]
+  [MVCTable('ar_ctrl_user_roles')]
+  TUserRoleCtrl = class(TMVCActiveRecord)
+  private
+    [MVCTableField('user_id', [foPrimaryKey])]
+    fUserID: Integer;
+    [MVCTableField('role_id', [foPrimaryKey])]
+    fRoleID: Integer;
+    [MVCTableField('note')]
+    fNote: NullableString;
+  public
+    property UserID: Integer read fUserID write fUserID;
+    property RoleID: Integer read fRoleID write fRoleID;
+    property Note: NullableString read fNote write fNote;
+  end;
+
+  // Composite key with a STRING column, used to prove that a key value containing
+  // the old delimiter characters (';' and ',') round-trips through the JSON-array
+  // URL segment. Table created/dropped by the controller test.
+  [MVCNameCase(ncLowerCase)]
+  [MVCTable('ar_ctrl_docs')]
+  TCtrlDoc = class(TMVCActiveRecord)
+  private
+    [MVCTableField('doc_code', [foPrimaryKey])]
+    fDocCode: string;
+    [MVCTableField('line_no', [foPrimaryKey])]
+    fLineNo: Integer;
+    [MVCTableField('note')]
+    fNote: NullableString;
+  public
+    property DocCode: string read fDocCode write fDocCode;
+    property LineNo: Integer read fLineNo write fLineNo;
+    property Note: NullableString read fNote write fNote;
+  end;
+
   [MVCNameCase(ncLowerCase)]
   [MVCTable('customers', 'ge(Rating,4)')]
   TGoodCustomer = class(TCustomer)
@@ -1679,5 +1717,7 @@ end;
 initialization
 
 ActiveRecordMappingRegistry.AddEntity('customers', TCustomer);
+ActiveRecordMappingRegistry.AddEntity('userroles', TUserRoleCtrl);
+ActiveRecordMappingRegistry.AddEntity('ctrldocs', TCtrlDoc);
 
 end.
