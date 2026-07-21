@@ -186,6 +186,15 @@ type
     { SelectUnidirectionalDataSet — signature tripwire }
     [Test]
     procedure TestSelectUnidirectionalDataSetSignature;
+    // Composite (multi-column) primary key: full CRUD via LoadByPKs/GetByPKs and
+    // the guards that steer single-value PK APIs to their *PKs counterparts.
+    [Test]
+    procedure TestCompositePK_CRUD;
+    [Test]
+    procedure TestCompositePK_Guards;
+    // Heterogeneous key: string column + integer column.
+    [Test]
+    procedure TestCompositePK_Heterogeneous;
   end;
 
   [TestFixture]
@@ -274,6 +283,40 @@ type
   public
     property ID: Int64 read fID write fID;
     property Descr: string read fDescr write fDescr;
+  end;
+
+  // Heterogeneous composite primary key: a string column + an integer column.
+  // Proves PK columns need not share a type.
+  [MVCTable('ar_doc_lines')]
+  TARDocLine = class(TMVCActiveRecord)
+  private
+    [MVCTableField('doc_code', [foPrimaryKey])]
+    fDocCode: string;
+    [MVCTableField('line_no', [foPrimaryKey])]
+    fLineNo: Integer;
+    [MVCTableField('descr')]
+    fDescr: NullableString;
+  public
+    property DocCode: string read fDocCode write fDocCode;
+    property LineNo: Integer read fLineNo write fLineNo;
+    property Descr: NullableString read fDescr write fDescr;
+  end;
+
+  // Natural composite primary key (two columns, no auto-generation): the common
+  // junction-table shape. Its table is created/dropped by the test itself.
+  [MVCTable('ar_user_roles')]
+  TARUserRole = class(TMVCActiveRecord)
+  private
+    [MVCTableField('user_id', [foPrimaryKey])]
+    fUserID: Integer;
+    [MVCTableField('role_id', [foPrimaryKey])]
+    fRoleID: Integer;
+    [MVCTableField('note')]
+    fNote: NullableString;
+  public
+    property UserID: Integer read fUserID write fUserID;
+    property RoleID: Integer read fRoleID write fRoleID;
+    property Note: NullableString read fNote write fNote;
   end;
 
   // In-memory UnitOfWork test (no DB): Merge + Apply with Handled:=True.
@@ -2955,6 +2998,178 @@ begin
       'Overload 2: Prior must raise on a unidirectional dataset after scrolling');
   finally
     lDS.Free;
+  end;
+end;
+
+procedure TTestActiveRecordBase.TestCompositePK_CRUD;
+var
+  lE, lLoaded: TARUserRole;
+begin
+  // Portable two-column-PK table (SQLite / Firebird / PostgreSQL). Created and
+  // dropped by the test so it never touches the shared schema.
+  try
+    ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE ar_user_roles');
+  except
+  end;
+  ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL(
+    'CREATE TABLE ar_user_roles (user_id INTEGER NOT NULL, role_id INTEGER NOT NULL, ' +
+    'note VARCHAR(200), PRIMARY KEY(user_id, role_id))');
+  try
+    lE := TARUserRole.Create;
+    try
+      lE.UserID := 1; lE.RoleID := 42; lE.Note := 'admin'; lE.Insert;
+    finally
+      lE.Free;
+    end;
+    lE := TARUserRole.Create;
+    try
+      lE.UserID := 1; lE.RoleID := 43; lE.Note := 'editor'; lE.Insert;
+    finally
+      lE.Free;
+    end;
+
+    Assert.AreEqual(Int64(2), TMVCActiveRecord.Count<TARUserRole>(),
+      'two composite-key rows inserted');
+
+    // GetByPKs (found): both key columns must match
+    lLoaded := TMVCActiveRecord.GetByPKs<TARUserRole>([1, 42]);
+    try
+      Assert.AreEqual(1, lLoaded.UserID);
+      Assert.AreEqual(42, lLoaded.RoleID);
+      Assert.AreEqual('admin', lLoaded.Note.Value);
+    finally
+      lLoaded.Free;
+    end;
+
+    // GetByPKs (missing key, RaiseExceptionIfNotFound = False)
+    lLoaded := TMVCActiveRecord.GetByPKs<TARUserRole>([9, 9], False);
+    Assert.IsTrue(lLoaded = nil, 'GetByPKs must return nil for a missing composite key');
+
+    // LoadByPKs + Update
+    lLoaded := TARUserRole.Create;
+    try
+      Assert.IsTrue(lLoaded.LoadByPKs([1, 43]), 'LoadByPKs finds the row');
+      lLoaded.Note := 'writer';
+      lLoaded.Update;
+    finally
+      lLoaded.Free;
+    end;
+    lLoaded := TMVCActiveRecord.GetByPKs<TARUserRole>([1, 43]);
+    try
+      Assert.AreEqual('writer', lLoaded.Note.Value, 'Update persisted on the composite-key row');
+    finally
+      lLoaded.Free;
+    end;
+
+    // Delete addresses both key columns: the sibling (1,43) must survive
+    lLoaded := TMVCActiveRecord.GetByPKs<TARUserRole>([1, 42]);
+    try
+      lLoaded.Delete;
+    finally
+      lLoaded.Free;
+    end;
+    Assert.AreEqual(Int64(1), TMVCActiveRecord.Count<TARUserRole>(),
+      'only the addressed composite-key row was deleted');
+    lLoaded := TMVCActiveRecord.GetByPKs<TARUserRole>([1, 42], False);
+    Assert.IsTrue(lLoaded = nil, 'the deleted row is gone');
+    lLoaded := TMVCActiveRecord.GetByPKs<TARUserRole>([1, 43], False);
+    Assert.IsTrue(lLoaded <> nil, 'the sibling row is untouched');
+    lLoaded.Free;
+  finally
+    try
+      ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE ar_user_roles');
+    except
+    end;
+  end;
+end;
+
+procedure TTestActiveRecordBase.TestCompositePK_Guards;
+var
+  lE: TARUserRole;
+begin
+  // No table needed: every guard fires from the RTTI-built table map before any
+  // database access, so this test is DB-independent.
+  lE := TARUserRole.Create;
+  try
+    lE.UserID := 1;
+    lE.RoleID := 2;
+    Assert.IsTrue(lE.HasCompositePK, 'entity must report a composite PK');
+    // Single-value PK APIs are meaningless on a composite key: they must steer
+    // the caller to the *PKs variants rather than silently use only column [0].
+    Assert.WillRaise(procedure begin lE.GetPK end, EMVCActiveRecord,
+      'GetPK must raise on a composite key');
+    Assert.WillRaise(procedure begin lE.SetPK(1) end, EMVCActiveRecord,
+      'SetPK must raise on a composite key');
+    Assert.WillRaise(procedure begin lE.LoadByPK(1) end, EMVCActiveRecord,
+      'single-value LoadByPK must raise on a composite key');
+    Assert.WillRaise(procedure begin lE.Refresh end, EMVCActiveRecord,
+      'Refresh must raise on a composite key');
+    Assert.WillRaise(procedure begin lE.LoadByPKs([1]) end, EMVCActiveRecord,
+      'LoadByPKs must raise when the value count does not match the PK column count');
+  finally
+    lE.Free;
+  end;
+end;
+
+procedure TTestActiveRecordBase.TestCompositePK_Heterogeneous;
+var
+  lE, lLoaded: TARDocLine;
+begin
+  try
+    ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE ar_doc_lines');
+  except
+  end;
+  ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL(
+    'CREATE TABLE ar_doc_lines (doc_code VARCHAR(50) NOT NULL, line_no INTEGER NOT NULL, ' +
+    'descr VARCHAR(200), PRIMARY KEY(doc_code, line_no))');
+  try
+    lE := TARDocLine.Create;
+    try
+      lE.DocCode := 'INV-001'; lE.LineNo := 1; lE.Descr := 'first'; lE.Insert;
+    finally
+      lE.Free;
+    end;
+    lE := TARDocLine.Create;
+    try
+      lE.DocCode := 'INV-001'; lE.LineNo := 2; lE.Descr := 'second'; lE.Insert;
+    finally
+      lE.Free;
+    end;
+
+    Assert.AreEqual(Int64(2), TMVCActiveRecord.Count<TARDocLine>());
+
+    // GetByPKs with a string value AND an integer value (heterogeneous key)
+    lLoaded := TMVCActiveRecord.GetByPKs<TARDocLine>(['INV-001', 2]);
+    try
+      Assert.AreEqual('INV-001', lLoaded.DocCode);
+      Assert.AreEqual(2, lLoaded.LineNo);
+      Assert.AreEqual('second', lLoaded.Descr.Value);
+    finally
+      lLoaded.Free;
+    end;
+
+    // LoadByPKs (string, integer)
+    lLoaded := TARDocLine.Create;
+    try
+      Assert.IsTrue(lLoaded.LoadByPKs(['INV-001', 1]));
+      Assert.AreEqual('first', lLoaded.Descr.Value);
+      lLoaded.Delete;
+    finally
+      lLoaded.Free;
+    end;
+
+    Assert.AreEqual(Int64(1), TMVCActiveRecord.Count<TARDocLine>(),
+      'delete addressed the (string,int) key precisely; the sibling survives');
+    lLoaded := TMVCActiveRecord.GetByPKs<TARDocLine>(['INV-001', 1], False);
+    Assert.IsTrue(lLoaded = nil);
+    lLoaded := TMVCActiveRecord.GetByPKs<TARDocLine>(['INV-001', 2], False);
+    Assert.IsTrue(lLoaded <> nil);
+    lLoaded.Free;
+  finally
+    try
+      ActiveRecordConnectionsRegistry.GetCurrent.ExecSQL('DROP TABLE ar_doc_lines');
+    except
+    end;
   end;
 end;
 

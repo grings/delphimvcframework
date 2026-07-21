@@ -39,6 +39,11 @@ uses
   System.Generics.Collections,
   MVCFramework.Serializer.Commons, MVCFramework.Swagger.Commons;
 
+const
+  /// <summary>Separator used in the ($id) URL segment to carry a composite
+  /// primary key, e.g. GET /customers/1;42 for a two-column key.</summary>
+  PK_URL_DELIMITER = ';';
+
 type
 {$SCOPEDENUMS ON}
   TMVCActiveRecordAction = (Create, Retrieve, Update, Delete);
@@ -89,7 +94,7 @@ type
     [MVCSwagResponses(HTTP_STATUS.OK, 'One {singularmodel}', SWAGUseDefaultControllerModel)]
     [MVCSwagResponses(HTTP_STATUS.NotFound, 'Error', TMVCErrorResponse)]
     [MVCSwagResponses(HTTP_STATUS.BadRequest, '', TMVCErrorResponse)]
-    procedure GetEntity(const entityname: string; const id: Integer); virtual;
+    procedure GetEntity(const entityname: string; const id: string); virtual;
 
     [MVCPath('/($entityname)')]
     [MVCHTTPMethod([httpPOST])]
@@ -107,7 +112,7 @@ type
     [MVCSwagResponses(HTTP_STATUS.NotFound, 'Error', TMVCErrorResponse)]
     [MVCSwagResponses(HTTP_STATUS.BadRequest, '', TMVCErrorResponse)]
     [MVCSwagParam(TMVCSwagParamLocation.plBody, '{singularmodel}', 'A single entity of type {singularmodel}', SWAGUseDefaultControllerModel, TMVCSwagParamType.ptString, True)]
-    procedure UpdateEntity(const entityname: string; const id: Integer); virtual;
+    procedure UpdateEntity(const entityname: string; const id: string); virtual;
 
     [MVCPath('/($entityname)/($id)')]
     [MVCHTTPMethod([httpDELETE])]
@@ -115,7 +120,7 @@ type
     [MVCSwagResponses(HTTP_STATUS.NoContent, '')]
     [MVCSwagResponses(HTTP_STATUS.NotFound, 'Error', TMVCErrorResponse)]
     [MVCSwagResponses(HTTP_STATUS.BadRequest, '', TMVCErrorResponse)]
-    procedure DeleteEntity(const entityname: string; const id: Integer); virtual;
+    procedure DeleteEntity(const entityname: string; const id: string); virtual;
 
   end;
 
@@ -196,13 +201,10 @@ begin
           .Add('data', lARResp,
             procedure(const AObject: TObject; const Links: IMVCLinks)
             begin
-              //Links.AddRefLink.Add(HATEOAS.HREF, fURLSegment + '/' + )
-              case TMVCActiveRecord(AObject).GetPrimaryKeyFieldType of
-                ftInteger:
-                  Links.AddRefLink.Add(HATEOAS.HREF, fURLSegment + '/' + TMVCActiveRecord(AObject).GetPK.AsInteger.ToString);
-                ftLargeint:
-                  Links.AddRefLink.Add(HATEOAS.HREF, fURLSegment + '/' + TMVCActiveRecord(AObject).GetPK.AsInt64.ToString);
-              end;
+              // Self-link keyed on the PK. Composite keys are joined with
+              // PK_URL_DELIMITER; string/GUID keys are now addressable too.
+              Links.AddRefLink.Add(HATEOAS.HREF,
+                fURLSegment + '/' + TMVCActiveRecord(AObject).PKAsDelimitedString(PK_URL_DELIMITER));
             end)
           .Add('meta', lStrDict));
       finally
@@ -249,7 +251,7 @@ begin
 end;
 
 
-procedure TMVCActiveRecordController.GetEntity(const entityname: string; const id: Integer);
+procedure TMVCActiveRecordController.GetEntity(const entityname: string; const id: string);
 var
   lAR: TMVCActiveRecord;
   lARClass: TMVCActiveRecordClass;
@@ -280,7 +282,8 @@ begin
       Exit;
     end;
 
-    if lAR.LoadByPK(id) then
+    // LoadByPKs handles both a single PK and a composite key ("k1;k2").
+    if lAR.LoadByPKs(string(id).Split([PK_URL_DELIMITER])) then
     begin
       lResponse := MVCResponseBuilder
           .StatusCode(HTTP_STATUS.OK)
@@ -364,7 +367,8 @@ begin
 
     Context.Request.BodyFor<TMVCActiveRecord>(lAR);
     lAR.Insert;
-    Context.Response.CustomHeaders.Values['X-REF'] := Context.Request.PathInfo + '/' + lAR.GetPK.AsInt64.ToString;
+    Context.Response.CustomHeaders.Values['X-REF'] :=
+      Context.Request.PathInfo + '/' + lAR.PKAsDelimitedString(PK_URL_DELIMITER);
     if Context.Request.QueryStringParam('refresh').ToLower = 'true' then
     begin
       RenderStatusMessage(HTTP_STATUS.Created, entityname.ToLower + ' created', '', lAR, False);
@@ -378,12 +382,13 @@ begin
   end;
 end;
 
-procedure TMVCActiveRecordController.UpdateEntity(const entityname: string; const id: Integer);
+procedure TMVCActiveRecordController.UpdateEntity(const entityname: string; const id: string);
 var
   lAR: TMVCActiveRecord;
   lARClass: TMVCActiveRecordClass;
   lProcessor: IMVCEntityProcessor;
   lHandled: Boolean;
+  lPKValues: TArray<string>;
 begin
   lProcessor := nil;
   if ActiveRecordMappingRegistry.FindProcessorByURLSegment(entityname, lProcessor) then
@@ -408,10 +413,12 @@ begin
       Exit;
     end;
     lAR.CheckAction(TMVCEntityAction.eaUpdate);
-    if not lAR.LoadByPK(id) then
+    lPKValues := string(id).Split([PK_URL_DELIMITER]);
+    if not lAR.LoadByPKs(lPKValues) then
       raise EMVCException.CreateFmt(HTTP_STATUS.NotFound, 'Cannot find entity %s', [entityname]);
     Context.Request.BodyFor<TMVCActiveRecord>(lAR);
-    lAR.SetPK(id);
+    // The URL is the source of truth for the key: re-assert it after body bind.
+    lAR.SetPKs(lPKValues);
     lAR.Update;
     Context.Response.CustomHeaders.Values['X-REF'] := Context.Request.PathInfo;
     if Context.Request.QueryStringParam('refresh').ToLower = 'true' then
@@ -427,12 +434,13 @@ begin
   end;
 end;
 
-procedure TMVCActiveRecordController.DeleteEntity(const entityname: string; const id: Integer);
+procedure TMVCActiveRecordController.DeleteEntity(const entityname: string; const id: string);
 var
   lAR: TMVCActiveRecord;
   lARClass: TMVCActiveRecordClass;
   lProcessor: IMVCEntityProcessor;
   lHandled: Boolean;
+  lPKValues: TArray<string>;
 begin
   lProcessor := nil;
   if ActiveRecordMappingRegistry.FindProcessorByURLSegment(entityname, lProcessor) then
@@ -461,9 +469,10 @@ begin
       HTTP DELETE is an idempotent operation. Invoking it multiple times consecutively must result in
       the same behavior as the first. Meaning: you shouldn't return HTTP 404.
     }
-    if lAR.LoadByPK(id) then
+    lPKValues := string(id).Split([PK_URL_DELIMITER]);
+    if lAR.LoadByPKs(lPKValues) then
     begin
-      lAR.SetPK(id);
+      lAR.SetPKs(lPKValues);
       lAR.Delete;
     end;
     Render(HTTP_STATUS.OK, entityname.ToLower + ' deleted');

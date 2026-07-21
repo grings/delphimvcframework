@@ -58,18 +58,18 @@ function TMVCSQLGeneratorInterbase.CreateInsertSQL(
 var
   lKeyValue: TPair<TRttiField, TFieldInfo>;
   lSB: TStringBuilder;
-  lPKInInsert: Boolean;
   lFieldName: String;
+  lPKIdx: Integer;
 begin
-  lPKInInsert := (not TableMap.fPrimaryKeyFieldName.IsEmpty);
-  lPKInInsert := lPKInInsert and (not(TMVCActiveRecordFieldOption.foReadOnly in TableMap.fPrimaryKeyOptions));
   lSB := TStringBuilder.Create;
   try
     lSB.Append('INSERT INTO ' + GetTableNameForSQL(TableMap.fTableName) + '(');
-    if lPKInInsert then
-    begin
-      lSB.Append(GetFieldNameForSQL(TableMap.fPrimaryKeyFieldName) + ',');
-    end;
+    // Interbase has no RETURNING: an auto-generated PK value is pre-fetched via a
+    // generator (FillPrimaryKey) BEFORE the insert, so every PK column that is not
+    // read-only is written as a value. Single-PK: identical to the old emission.
+    for lPKIdx := 0 to High(TableMap.fPrimaryKeys) do
+      if not (foReadOnly in TableMap.fPrimaryKeys[lPKIdx].Options) then
+        lSB.Append(GetFieldNameForSQL(TableMap.fPrimaryKeys[lPKIdx].FieldName) + ',');
 
     {partition}
     for lFieldName in fPartitionInfo.FieldNames do
@@ -88,10 +88,9 @@ begin
 
     lSB.Remove(lSB.Length - 1, 1);
     lSB.Append(') values (');
-    if lPKInInsert then
-    begin
-      lSB.Append(':' + GetParamNameForSQL(TableMap.fPrimaryKeyFieldName) + ',');
-    end;
+    for lPKIdx := 0 to High(TableMap.fPrimaryKeys) do
+      if not (foReadOnly in TableMap.fPrimaryKeys[lPKIdx].Options) then
+        lSB.Append(':' + GetParamNameForSQL(TableMap.fPrimaryKeys[lPKIdx].FieldName) + ',');
 
     {partition}
     for lFieldName in fPartitionInfo.FieldNames do
